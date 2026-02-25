@@ -8,6 +8,19 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up Java
+        # 打包 Android 必须要有 Java 环境
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        # 预先装好 Flutter，不让 Flet 报错
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -15,12 +28,12 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install flet
-          # 乙提示：如果代码里用了bs4，打包环境也需要装一下
-          pip install beautifulsoup4 aiohttp 
+          pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        run: flet build apk --org com.boss.manga
+        # 核心修改：通过 yes 指令强行同意所有提示
+        run: |
+          yes | flet build apk --org com.boss.manga
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
