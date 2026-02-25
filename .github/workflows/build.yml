@@ -29,9 +29,9 @@ jobs:
           pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        # 乙提示：--permissions internet 是解决黑屏的关键
+        # 使用安卓原生权限声明方式
         run: |
-          yes | flet build apk --org com.boss.manga --project "MangaNexus" --permissions internet
+          yes | flet build apk --org com.boss.manga --project "MangaNexus" --android-permissions "android.permission.INTERNET"
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
