@@ -9,14 +9,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java
-        # 打包 Android 必须要有 Java 环境
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Set up Flutter
-        # 预先装好 Flutter，不让 Flet 报错
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
@@ -31,9 +29,9 @@ jobs:
           pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        # 核心修改：通过 yes 指令强行同意所有提示
+        # 乙提示：--permissions internet 是解决黑屏的关键
         run: |
-          yes | flet build apk --org com.boss.manga
+          yes | flet build apk --org com.boss.manga --project "MangaNexus" --permissions internet
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
