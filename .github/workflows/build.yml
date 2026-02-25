@@ -29,9 +29,9 @@ jobs:
           pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        # 使用安卓原生权限声明方式
+        # 简化指令：去掉冗余权限，改用 --yes 自动同意安装 SDK
         run: |
-          yes | flet build apk --org com.boss.manga --project "MangaNexus" --android-permissions "android.permission.INTERNET"
+          flet build apk --project "MangaNexus" --org com.boss.manga --yes
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
