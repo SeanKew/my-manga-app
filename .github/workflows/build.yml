@@ -29,11 +29,9 @@ jobs:
           pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        # 专项适配：--no-enable-impeller 解决 MagicOS/高刷屏黑屏问题
-        # --yes 自动同意协议，--clear-cache 确保构建环境干净
+        # 核心修正：参数必须用引号包裹，并紧跟在 --flutter-build-args 后面
         run: |
-          flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache \
-          --flutter-build-args "--no-enable-impeller"
+          flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache --flutter-build-args "--no-enable-impeller"
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
