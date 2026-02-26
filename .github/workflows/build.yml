@@ -7,33 +7,24 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Install Dependencies
-        run: |
-          pip install flet beautifulsoup4 aiohttp
-
+        run: pip install flet beautifulsoup4 aiohttp
       - name: Build APK
-        # 核心战术变更：不再在命令行强行透传参数，而是使用 --yes 确保基础流程走通
-        # 针对 MagicOS 的黑屏，我们已经在 main.py 里做了代码级的渲染优化
-        run: |
-          flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache
-        
+        # 移除所有可能冲突的参数，只留最核心的
+        run: flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
