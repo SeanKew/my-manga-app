@@ -7,24 +7,35 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Set up Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install Dependencies
-        run: pip install flet beautifulsoup4 aiohttp
+
+      - name: Install Flet SDK & Build Tools
+        run: |
+          pip install flet beautifulsoup4 httpx
+          # 必须安装 flutter 引擎支持
+          python -m pip install --upgrade pip
+
+      - name: Flutter SDK Setup
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
       - name: Build APK
-        # 移除所有可能冲突的参数，只留最核心的
-        run: flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache
+        run: |
+          # 增加 --verbose 可以在 GitHub 日志里看到错误细节
+          # 增加 --include-data 确保你的 main.py 及其相关资源被正确打包
+          flet build apk --project "MangaNexus" --org com.boss.manga --include-data "." --verbose
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
