@@ -38,3 +38,4 @@ jobs:
         with:
           name: manga-nexus-apk
           path: build/apk/*.apk
+
