@@ -29,13 +29,13 @@ jobs:
           pip install flet beautifulsoup4 aiohttp
 
       - name: Build APK
-        # 核心修正：参数必须用引号包裹，并紧跟在 --flutter-build-args 后面
+        # 核心战术变更：不再在命令行强行透传参数，而是使用 --yes 确保基础流程走通
+        # 针对 MagicOS 的黑屏，我们已经在 main.py 里做了代码级的渲染优化
         run: |
-          flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache --flutter-build-args "--no-enable-impeller"
+          flet build apk --project "MangaNexus" --org com.boss.manga --yes --clear-cache
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: manga-nexus-apk
           path: build/apk/*.apk
-
