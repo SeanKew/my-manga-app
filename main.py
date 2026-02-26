@@ -1,12 +1,30 @@
 import flet as ft
-import aiohttp
 import asyncio
+import os
+import platform
+import random
 import re
 from bs4 import BeautifulSoup
-import os
-import sqlite3
+import aiohttp
 
-# ================= 1. 漫画精准抓取器 (Manwa 专项) =================
+# ================= 1. 适配 MagicOS 的路径管理 =================
+class MangaStore:
+    def __init__(self):
+        # 优先使用应用私有目录，避免权限拦截
+        db_dir = os.environ.get("FLET_APP_DATA", ".")
+        self.db_path = os.path.join(db_dir, "manga_magic.db")
+        self.init_db()
+
+    def init_db(self):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.execute('CREATE TABLE IF NOT EXISTS manga (id INTEGER PRIMARY KEY, title TEXT, url TEXT)')
+            conn.commit()
+            conn.close()
+        except: pass
+
+# ================= 2. 净网爬虫模块 =================
 class ManwaSpider:
     def __init__(self):
         self.headers = {
@@ -14,82 +32,71 @@ class ManwaSpider:
             "Referer": "https://manwa.me/"
         }
 
-    async def fetch_chapter_images(self, url):
-        """精准抓取章节图片，无视广告"""
+    async def fetch_images(self, url):
         try:
             async with aiohttp.ClientSession(headers=self.headers) as session:
-                async with session.get(url, timeout=10) as response:
-                    html = await response.text()
+                async with session.get(url, timeout=10) as resp:
+                    html = await resp.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    
-                    # 【核心】定位漫画内容容器，跳过所有广告 div
-                    # 通常 Manwa 的图片在 id 或 class 包含 'content' 的区域
-                    content_div = soup.find('div', class_=re.compile(r'chapter-content|read-content'))
-                    
-                    images = []
-                    if content_div:
-                        img_tags = content_div.find_all('img')
-                        for img in img_tags:
-                            src = img.get('data-src') or img.get('src')
-                            if src and 'http' in src:
-                                # 排除已知的广告域名或小图标
-                                if "ads" not in src and "icon" not in src:
-                                    images.append(src)
-                    
-                    return images if images else ["ERROR: 未找到图片"]
-        except Exception as e:
-            return [f"连接错误: {str(e)}"]
+                    content = soup.find('div', class_=re.compile(r'chapter-content|read-content'))
+                    if not content: return []
+                    return [img.get('data-src') or img.get('src') for img in content.find_all('img') if img.get('src')]
+        except: return []
 
-# ================= 2. 界面逻辑升级 =================
+# ================= 3. UI 主逻辑 (强制渲染架构) =================
 async def main(page: ft.Page):
-    page.title = "次元幻境 - 净网版"
-    page.theme_mode = ft.ThemeMode.DARK
+    # 【核心适配】立即设置背景颜色和初始文字，强制 MagicOS 渲染 UI 帧
+    page.bgcolor = ft.colors.BLACK
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
     
+    status_text = ft.Text("次元幻境：内核启动中...", color="cyan", size=16)
+    loading_icon = ft.ProgressBar(width=200, color="cyan")
+    page.add(status_text, loading_icon)
+    page.update()
+
+    # 模拟系统初始化延迟
+    await asyncio.sleep(1.5)
+    
+    # 初始化组件
     spider = ManwaSpider()
-    
-    # 顶部 UI
-    url_input = ft.TextField(
-        label="输入漫画章节链接", 
-        value="https://manwa.me/chapter/31290275",
-        expand=True
-    )
-    
     image_list = ft.ListView(expand=True, spacing=10)
-    progress = ft.ProgressBar(visible=False)
+    url_input = ft.TextField(
+        label="输入 Manwa 章节链接", 
+        value="https://manwa.me/chapter/31290275",
+        expand=True,
+        border_color="cyan"
+    )
 
-    async def start_reading(e):
-        if not url_input.value: return
+    async def on_load_click(e):
+        status_text.visible = True
+        status_text.value = "正在净化网页并提取内容..."
+        page.update()
         
-        progress.visible = True
+        imgs = await spider.fetch_images(url_input.value)
         image_list.controls.clear()
-        page.add(ft.SnackBar(ft.Text("正在净化网页并提取漫画..."), open=True))
-        page.update()
-
-        # 开始抓取
-        img_urls = await spider.fetch_chapter_images(url_input.value)
         
-        progress.visible = False
-        if "ERROR" in img_urls[0]:
-            image_list.controls.append(ft.Text(img_urls[0], color="red"))
+        if not imgs:
+            page.snack_bar = ft.SnackBar(ft.Text("抓取失败，请检查网络权限"))
+            page.snack_bar.open = True
         else:
-            for url in img_urls:
-                # 丙的建议：增加图片加载占位符，防止白屏
-                image_list.controls.append(
-                    ft.Image(
-                        src=url,
-                        fit=ft.ImageFit.WIDTH,
-                        repeat=ft.ImageRepeat.NO_REPEAT,
-                        border_radius=5,
-                        error_content=ft.Text("图片加载失败(可能已被防盗链)")
-                    )
-                )
+            for img_url in imgs:
+                image_list.controls.append(ft.Image(src=img_url, fit=ft.ImageFit.WIDTH))
+        
+        status_text.visible = False
         page.update()
 
+    # 4. 替换为正式主界面
+    page.controls.clear()
+    page.vertical_alignment = ft.MainAxisAlignment.START
     page.add(
-        ft.Row([url_input, ft.IconButton(ft.icons.PLAY_CIRCLE_FILL, on_click=start_reading)]),
-        progress,
+        ft.Container(height=20), # 状态栏间距
+        ft.Row([url_input, ft.IconButton(ft.icons.PLAY_ARROW_ROUNDED, on_click=on_load_click, icon_color="cyan")]),
+        status_text,
         image_list
     )
+    status_text.visible = False
+    page.update()
 
 if __name__ == "__main__":
     ft.app(target=main)
