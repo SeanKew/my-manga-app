@@ -1,69 +1,60 @@
 import flet as ft
 import asyncio
-import httpx  # 建议替换 aiohttp，httpx 在移动端更稳
 
 async def main(page: ft.Page):
     page.title = "次元幻境"
-    page.bgcolor = ft.colors.BLACK
     page.theme_mode = ft.ThemeMode.DARK
-    page.padding = 20
+    page.bgcolor = ft.colors.BLACK
     
-    # 状态变量
-    manga_source = "https://manwa.me" # 示例源
+    # Debug 日志区：直接显示在手机屏幕上
+    debug_log = ft.Text("系统日志已启动...\n", color="green", size=10)
+    
+    def log(msg):
+        debug_log.value += f"> {msg}\n"
+        page.update()
 
-    # --- 核心 UI 逻辑 ---
+    # 1. 强力心跳
+    async def heartbeat():
+        while True:
+            dot.opacity = 0.01 if dot.opacity == 0 else 0
+            dot.update()
+            await asyncio.sleep(0.5)
+
+    dot = ft.Container(width=1, height=1, opacity=0)
+    
+    # 2. 搜索逻辑
     async def go_read(e):
-        target_url = url_input.value
-        if not target_url:
-            page.snack_bar = ft.SnackBar(ft.Text("请输入链接！"))
-            page.snack_bar.open = True
-            page.update()
-            return
+        log(f"开始尝试访问: {url_input.value}")
+        try:
+            # 引入测试：模拟一个请求
+            import httpx
+            async with httpx.AsyncClient(verify=False) as client:
+                log("正在测试网络连通性...")
+                resp = await client.get("https://www.google.com", timeout=5.0)
+                log(f"网络测试成功，状态码: {resp.status_code}")
+        except Exception as ex:
+            log(f"网络异常: {str(ex)}")
 
-        loading_screen.visible = True
-        search_screen.visible = False
-        page.update()
-        
-        # 模拟净化加载过程 (甲建议：此处后期接入 BeautifulSoup)
-        await asyncio.sleep(2) 
-        
-        loading_screen.visible = False
-        content_screen.visible = True
-        content_screen.controls.append(ft.Text(f"已净化资源：{target_url}", color="green"))
-        page.update()
-
-    # --- 界面层级 ---
-    loading_screen = ft.Column([
-        ft.ProgressRing(),
-        ft.Text("正在穿透广告层，请稍后...", color="white")
-    ], visible=False, horizontal_alignment="center")
-
-    search_screen = ft.Column([
-        ft.Text("次元幻境 - MagicOS 适配版", size=24, weight="bold"),
-        ft.Container(height=20),
-        url_input := ft.TextField(
-            label="粘贴漫画链接 (如 Manwa)", 
-            border_color="blue", 
-            focused_border_color="cyan",
-            prefix_icon=ft.icons.LINK
-        ),
-        ft.ElevatedButton(
-            "开始净化阅读", 
-            icon=ft.icons.CLEAN_HANDS,
-            on_click=go_read,
-            style=ft.ButtonStyle(color="white", bgcolor="blue")
-        )
-    ], horizontal_alignment="center")
-
-    content_screen = ft.Column(scroll=ft.ScrollMode.ALWAYS, expand=True, visible=False)
-
-    # 首次加载的心跳修正 (丙建议)
-    page.add(search_screen, loading_screen, content_screen)
+    url_input = ft.TextField(label="漫画链接", border_color="blue")
     
-    for i in range(3):
-        page.update()
-        await asyncio.sleep(0.3)
+    page.add(
+        dot,
+        ft.Text("MangaNexus v1.0", size=20, weight="bold"),
+        url_input,
+        ft.ElevatedButton("执行净化", on_click=go_read),
+        ft.Divider(),
+        ft.Text("实时调试终端:", size=12, color="grey"),
+        ft.Container(
+            content=debug_log,
+            bgcolor="#111111",
+            padding=10,
+            border_radius=10,
+            expand=True
+        )
+    )
+    
+    page.run_task(heartbeat)
+    log("MagicOS 渲染引擎已就绪")
 
 if __name__ == "__main__":
-    # 关键：在移动端有时需要指定渲染模式
     ft.app(target=main)
