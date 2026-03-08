@@ -1,56 +1,89 @@
 import flet as ft
+import sys
+import traceback
+import threading
 
+# 1. 物理级错误监控
 def main(page: ft.Page):
-    # 1. 强制设置背景色，避免默认黑色干扰判断
-    page.bgcolor = ft.colors.BLUE_GREY_900
-    page.padding = 0
-    
-    # 诊断函数：点击按钮切换网址
-    def load_test_url(e):
-        print("切换到测试网址")
-        webview.url = "https://www.bing.com" # 如果 Bing 能显示，说明之前的 HTML 格式有问题
+    # 强制设置页面配置，适配安卓全面屏
+    page.title = "Manga Purifier v6.0"
+    page.theme_mode = ft.ThemeMode.DARK
+    page.window_full_screen = True
+    page.padding = 10
+    page.spacing = 10
+
+    # 定义错误显示函数（如果后台卡死，直接在页面顶层强刷）
+    def show_critical_error(msg):
+        page.clean()
+        page.add(ft.Text(f"CRITICAL ERROR:\n{msg}", color="red", weight="bold"))
         page.update()
 
-    # 2. 原生诊断组件 (如果你能看到这个按钮，说明 Flet 渲染正常)
-    test_button = ft.ElevatedButton(
-        "如果看到此按钮，说明 Flet 正常。点我测试 Bing",
-        on_click=load_test_url,
-        color=ft.colors.WHITE,
-        bgcolor=ft.colors.BLUE_700,
-    )
+    sys.excepthook = lambda t, v, tb: show_critical_error("".join(traceback.format_exception(t, v, tb)))
 
-    # 3. 增强型 WebView 配置
-    webview = ft.WebView(
-        url="https://www.google.com", # 先用标准网址测试，排除 HTML 代码干扰
-        expand=True, # 关键：强制拉伸填充
-        on_page_started=lambda _: print("网页开始加载"),
-        on_page_ended=lambda _: print("网页加载完成"),
+    # 2. 构造 UI 组件
+    url_input = ft.TextField(
+        label="输入漫画地址", 
+        hint_text="https://...", 
+        border_color="cyan",
+        expand=True
     )
+    
+    status_text = ft.Text("系统就绪...", color="grey")
+    results_list = ft.ListView(expand=True, spacing=10)
 
-    # 4. 使用明确的布局结构
-    page.add(
-        ft.SafeArea(
-            content=ft.Column(
-                controls=[
-                    ft.Container(
-                        content=test_button,
-                        padding=20,
-                        alignment=ft.alignment.center
-                    ),
-                    # WebView 必须放在一个 expand 的容器里
-                    ft.Container(
-                        content=webview,
-                        expand=True,
-                        border=ft.border.all(2, ft.colors.RED), # 红色边框：看看 WebView 到底占了多大地方
-                    )
-                ],
-                expand=True,
-                spacing=0
-            )
+    # 3. 核心功能函数
+    def start_process(e):
+        target = url_input.value.strip()
+        if not target:
+            status_text.value = "请输入有效地址！"
+            page.update()
+            return
+        
+        status_text.value = "🚀 正在启动引擎..."
+        status_text.color = "cyan"
+        page.update()
+
+        # 使用简易测试逻辑：先不运行 scraper，确认 UI 能动
+        def test_logic():
+            try:
+                import time
+                time.sleep(1)
+                status_text.value = f"正在解析: {target[:20]}..."
+                page.update()
+                
+                # 模拟加载
+                for i in range(3):
+                    results_list.controls.append(ft.Text(f"测试条目 {i+1}: 引擎连接中..."))
+                    page.update()
+                
+                status_text.value = "解析完成 (演示模式)"
+                page.update()
+            except Exception as ex:
+                show_critical_error(str(ex))
+
+        threading.Thread(target=test_logic, daemon=True).start()
+
+    # 4. 显式添加 View (关键：解决安卓多视图空白问题)
+    page.views.clear()
+    page.views.append(
+        ft.View(
+            "/",
+            [
+                ft.AppBar(title=ft.Text("漫画净化器"), bgcolor=ft.colors.SURFACE_VARIANT),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([url_input, ft.IconButton(ft.icons.PLAY_ARROW, on_click=start_process)]),
+                        status_text,
+                        ft.Divider(),
+                        results_list
+                    ], expand=True),
+                    expand=True
+                )
+            ]
         )
     )
+    page.go("/") # 强制路由跳转
+    page.update() # 强制初始刷新
 
-    # 5. 最后的唤醒
-    page.update()
-
-ft.app(target=main)
+if __name__ == "__main__":
+    ft.app(target=main)
