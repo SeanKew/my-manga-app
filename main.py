@@ -1,127 +1,89 @@
-import base64
-import hashlib
-import threading
+import flet as ft
 import sys
 import traceback
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-from urllib.parse import urljoin, urlparse
+import threading
 
-import cloudscraper
-import flet as ft
-from bs4 import BeautifulSoup
-
-# ==============================
-# 全局错误捕获 (解决黑屏无提示问题)
-# ==============================
-def create_exception_handler(page: ft.Page):
-    def handle_exception(exc_type, exc_value, exc_traceback):
-        err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        # 弹窗报警，确保在手机端能看到报错
-        page.dialog = ft.AlertDialog(
-            title=ft.Text("Fatal Error", color="red"),
-            content=ft.Column([ft.Text(err_msg, size=10)], scroll=ft.ScrollMode.ALWAYS),
-            actions=[ft.TextButton("Copy", on_click=lambda _: page.set_clipboard(err_msg))]
-        )
-        page.dialog.open = True
-        page.update()
-    return handle_exception
-
-# ==============================
-# 核心逻辑
-# ==============================
-class Engine:
-    def __init__(self):
-        # 增加超时限制，防止安卓主线程被 scraper 锁死
-        self.scraper = cloudscraper.create_scraper(
-            browser={'browser': 'chrome','platform': 'windows','desktop': True},
-            delay=10
-        )
-        self.cache_dir = Path("manga_cache")
-        self.cache_dir.mkdir(exist_ok=True)
-
-    def get_html(self, url: str):
-        headers = {"Referer": "https://18comic.vip/"} if "18comic" in url else {"Referer": url}
-        try:
-            r = self.scraper.get(url, headers=headers, timeout=15)
-            return r.text if r.status_code == 200 else None
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-# ==============================
-# UI 界面 - 安卓适配版
-# ==============================
+# 1. 物理级错误监控
 def main(page: ft.Page):
-    # 挂载异常处理器
-    sys.excepthook = create_exception_handler(page)
-    
-    page.title = "Manga Purifier V5.2"
+    # 强制设置页面配置，适配安卓全面屏
+    page.title = "Manga Purifier v6.0"
     page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = "#000000"
-    page.padding = 0
-    
-    # UI 状态定义
-    url_input = ft.TextField(hint_text="URL...", expand=True, bgcolor="#1A1C23", text_size=14)
-    log = ft.Text("System Standby", color="blue200", size=11)
-    pb = ft.ProgressBar(visible=False, color="cyan")
-    img_list = ft.ListView(expand=True, spacing=0, padding=0)
+    page.window_full_screen = True
+    page.padding = 10
+    page.spacing = 10
 
-    # 异步安全渲染
-    def safe_update():
-        try: page.update()
-        except: pass
+    # 定义错误显示函数（如果后台卡死，直接在页面顶层强刷）
+    def show_critical_error(msg):
+        page.clean()
+        page.add(ft.Text(f"CRITICAL ERROR:\n{msg}", color="red", weight="bold"))
+        page.update()
 
-    def on_run_click(e):
-        target = url_input.value.strip()
-        if not target: return
-        
-        img_list.controls.clear()
-        pb.visible = True
-        log.value = "⚡ Initializing Scraper..."; safe_update()
+    sys.excepthook = lambda t, v, tb: show_critical_error("".join(traceback.format_exception(t, v, tb)))
 
-        def background_task():
-            try:
-                api = Engine()
-                html = api.get_html(target)
-                if not html or html.startswith("Error"):
-                    log.value = f"Failed: {html}"; pb.visible = False; safe_update(); return
-
-                soup = BeautifulSoup(html, "html.parser")
-                # 兼容性提取逻辑
-                raw_urls = [img.get("data-original") or img.get("src") for img in soup.find_all("img")]
-                urls = [urljoin(target, u) for u in raw_urls if u and "logo" not in u.lower()]
-                
-                log.value = f"Found {len(urls)} images. Loading..."; safe_update()
-
-                # 分批渲染，每 5 张刷新一次 UI，防止安卓渲染卡死
-                with ThreadPoolExecutor(max_workers=4) as exe:
-                    for i, url in enumerate(urls):
-                        try:
-                            # 简化逻辑，这里直接演示 placeholder
-                            img_obj = ft.Image(src=url, fit=ft.ImageFit.FIT_WIDTH, width=page.window_width)
-                            img_list.controls.append(img_obj)
-                            if i % 5 == 0: safe_update()
-                        except: pass
-                
-                log.value = "Task Finished"; pb.visible = False; safe_update()
-            except Exception as ex:
-                sys.excepthook(*sys.exc_info())
-
-        threading.Thread(target=background_task, daemon=True).start()
-
-    # 布局构造
-    page.add(
-        ft.Column([
-            ft.Container(
-                padding=ft.padding.only(top=40, left=15, right=15, bottom=10),
-                content=ft.Column([
-                    ft.Row([url_input, ft.IconButton(ft.icons.BOLT, on_click=on_run_click, bgcolor="blue")]),
-                    pb, log
-                ])
-            ),
-            img_list
-        ], expand=True)
+    # 2. 构造 UI 组件
+    url_input = ft.TextField(
+        label="输入漫画地址", 
+        hint_text="https://...", 
+        border_color="cyan",
+        expand=True
     )
+    
+    status_text = ft.Text("系统就绪...", color="grey")
+    results_list = ft.ListView(expand=True, spacing=10)
+
+    # 3. 核心功能函数
+    def start_process(e):
+        target = url_input.value.strip()
+        if not target:
+            status_text.value = "请输入有效地址！"
+            page.update()
+            return
+        
+        status_text.value = "🚀 正在启动引擎..."
+        status_text.color = "cyan"
+        page.update()
+
+        # 使用简易测试逻辑：先不运行 scraper，确认 UI 能动
+        def test_logic():
+            try:
+                import time
+                time.sleep(1)
+                status_text.value = f"正在解析: {target[:20]}..."
+                page.update()
+                
+                # 模拟加载
+                for i in range(3):
+                    results_list.controls.append(ft.Text(f"测试条目 {i+1}: 引擎连接中..."))
+                    page.update()
+                
+                status_text.value = "解析完成 (演示模式)"
+                page.update()
+            except Exception as ex:
+                show_critical_error(str(ex))
+
+        threading.Thread(target=test_logic, daemon=True).start()
+
+    # 4. 显式添加 View (关键：解决安卓多视图空白问题)
+    page.views.clear()
+    page.views.append(
+        ft.View(
+            "/",
+            [
+                ft.AppBar(title=ft.Text("漫画净化器"), bgcolor=ft.colors.SURFACE_VARIANT),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([url_input, ft.IconButton(ft.icons.PLAY_ARROW, on_click=start_process)]),
+                        status_text,
+                        ft.Divider(),
+                        results_list
+                    ], expand=True),
+                    expand=True
+                )
+            ]
+        )
+    )
+    page.go("/") # 强制路由跳转
+    page.update() # 强制初始刷新
 
 if __name__ == "__main__":
     ft.app(target=main)
