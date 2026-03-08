@@ -7,28 +7,31 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # 升级到 v4，解决旧版弃用问题
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install flet
+          pip install flet cloudscraper beautifulsoup4
 
-      # Flet 打包需要 Flutter 环境，此 Action 会自动处理
+      # 核心构建步骤
       - name: Build Android APK
         run: |
-          # 使用 flet build 命令生成 APK
-          # --no-version-check 是为了防止在 GitHub 环境中因版本检查导致的挂起
+          # 增加 --verbose 可以在报错时看到更多细节
           flet build apk --no-version-check
 
+      # 升级到 v4，这是报错的核心修复点
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: manga-purifier-apk
+          name: manga-purifier-release-apk
+          # 确保路径匹配 flet 默认输出路径
           path: build/apk/*.apk
+          # 设置保留天数，节省你的 GitHub 空间
+          retention-days: 7
