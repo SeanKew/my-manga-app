@@ -36,16 +36,12 @@ jobs:
 
       - name: Build Android APK
         run: |
-          flet build apk \
-            --module-name main \
-            --android-permissions android.permission.INTERNET \
-            --assets assets \
-            --verbose
+          flet build apk main.py --module-name main --android-permissions android.permission.INTERNET --verbose
 
       - name: Upload Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: manga-purifier-fixed
+          name: manga-purifier-final
           path: build/apk/*.apk
           retention-days: 5
