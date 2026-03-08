@@ -7,51 +7,45 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出代码
       - uses: actions/checkout@v4
 
-      # 2. 设置 Python 3.10
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      # 3. 设置 Java 17 (Android 构建必需)
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 4. 设置 Flutter 环境
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 5. 安装 Python 依赖
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flet cloudscraper beautifulsoup4
 
-      # 6. 环境预检（自动处理入口文件重命名和 assets 检查）
       - name: Run Environment Check
         run: python check_env.py
 
-      # 7. 构建 Android APK
-      # --permissions INTERNET: 显式声明联网权限
-      # --assets assets: 强制将包含 network_security_config.xml 的文件夹打包
       - name: Build Android APK
         run: |
-          flet build apk --module-name main --verbose --permissions INTERNET --assets assets
+          flet build apk \
+            --module-name main \
+            --android-permissions android.permission.INTERNET \
+            --assets assets \
+            --verbose
 
-      # 8. 上传产物 (v4)
       - name: Upload Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: manga-purifier-v5-2
+          name: manga-purifier-fixed
           path: build/apk/*.apk
           retention-days: 5
