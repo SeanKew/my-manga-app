@@ -46,6 +46,7 @@ def initialize_database(db_path: str | Path) -> None:
                 content_hash TEXT UNIQUE,
                 cover_path TEXT NOT NULL DEFAULT '',
                 is_favorite INTEGER NOT NULL DEFAULT 0,
+                is_in_library INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -65,6 +66,14 @@ def initialize_database(db_path: str | Path) -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS online_reader_state (
+                manga_id INTEGER PRIMARY KEY REFERENCES manga(id) ON DELETE CASCADE,
+                source_url TEXT NOT NULL DEFAULT '',
+                image_urls_json TEXT NOT NULL DEFAULT '[]',
+                page_index INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS category (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE COLLATE NOCASE
@@ -80,3 +89,13 @@ def initialize_database(db_path: str | Path) -> None:
             CREATE INDEX IF NOT EXISTS idx_chapter_manga ON chapter(manga_id, chapter_index);
             """
         )
+
+        manga_columns = {row["name"] for row in db.execute("PRAGMA table_info(manga)").fetchall()}
+        if "is_in_library" not in manga_columns:
+            # Existing entries were already visible in the bookshelf; preserve them.
+            db.execute("ALTER TABLE manga ADD COLUMN is_in_library INTEGER NOT NULL DEFAULT 1")
+
+        progress_columns = {row["name"] for row in db.execute("PRAGMA table_info(reading_progress)").fetchall()}
+        if "source_url" not in progress_columns:
+            db.execute("ALTER TABLE reading_progress ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
+

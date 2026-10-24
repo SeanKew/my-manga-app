@@ -1,5 +1,9 @@
 name: Build Flet APK
 
+concurrency:
+  group: manga-app-build-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, "feature/**" ]
