@@ -19,7 +19,7 @@ MAX_PAGES = 1500
 
 
 def _natural_key(value: str) -> list[object]:
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\\d+)", value)]
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", value)]
 
 
 def import_local_file(repository: MangaRepository, filename: str, payload: bytes) -> dict:
