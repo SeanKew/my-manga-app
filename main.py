@@ -748,6 +748,7 @@ def main(page: ft.Page):
             icon_color=ft.Colors.PINK_300 if manga.get("is_favorite") else None,
             tooltip="取消收藏" if manga.get("is_favorite") else "收藏这部漫画",
         )
+        shelf_button = build_record_shelf_button(manga_id)
 
         def save_position(force: bool = False):
             now = time.monotonic()
@@ -898,8 +899,7 @@ def main(page: ft.Page):
 
         def back_to_library(_event=None):
             save_position(force=True)
-            page.padding = 12
-            build_library_view()
+            pop_screen()
 
         async def webpage_back(_event=None):
             try:
@@ -934,6 +934,8 @@ def main(page: ft.Page):
             page.update()
 
         favorite_button.on_click = toggle_online_favorite
+        screen_route = push_screen("reader-web")
+        screen_back_handlers[screen_route] = webpage_back
         page.clean()
         page.add(
             ft.SafeArea(
@@ -952,6 +954,7 @@ def main(page: ft.Page):
                                         on_click=back_to_library,
                                     ),
                                     ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=1, expand=True),
+                                    shelf_button,
                                     favorite_button,
                                 ],
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
