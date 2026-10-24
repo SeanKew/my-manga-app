@@ -46,7 +46,8 @@ class LibraryTests(unittest.TestCase):
         self.assertFalse(second["created"])
         chapter = self.repo.list_chapters(first["id"])[0]
         self.assertEqual(2, len(chapter["page_paths"]))
-        self.assertTrue(chapter["page_paths"][0].endswith("00001.jpg"))
+        self.assertEqual(b"fake-image-2", Path(chapter["page_paths"][0]).read_bytes())
+        self.assertEqual(b"fake-image-10", Path(chapter["page_paths"][1]).read_bytes())
 
 
 if __name__ == "__main__":
