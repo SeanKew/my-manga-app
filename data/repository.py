@@ -41,37 +41,66 @@ class MangaRepository:
             )
             return int(cursor.lastrowid), True
 
+    @staticmethod
+    def _online_content_hash(title: str, catalog_id: str | int | None = None) -> str:
+        clean_title = " ".join(str(title or "").split())
+        identity = f"catalog:{catalog_id}" if catalog_id is not None else f"title:{clean_title.casefold()}"
+        return hashlib.sha256(f"online-manga:{identity}".encode("utf-8")).hexdigest()
+
     def add_online_manga(
         self,
         title: str,
         source_uri: str,
         cover_url: str = "",
         catalog_id: str | int | None = None,
+        in_library: bool = False,
     ) -> tuple[int, bool]:
-        """Add a web-reading entry to the library, deduplicated by catalog ID or title."""
+        """Create/update a reading session; bookshelf membership is explicit."""
         clean_title = " ".join(str(title or "").split())
         clean_url = str(source_uri or "").strip()
         if not clean_title or not clean_url:
             raise ValueError("漫画标题和阅读来源不能为空")
 
-        identity = f"catalog:{catalog_id}" if catalog_id is not None else f"title:{clean_title.casefold()}"
-        content_hash = hashlib.sha256(f"online-manga:{identity}".encode("utf-8")).hexdigest()
+        content_hash = self._online_content_hash(clean_title, catalog_id)
         with connection(self.db_path) as db:
             row = db.execute(
-                "SELECT id, cover_path FROM manga WHERE content_hash = ?",
+                "SELECT id FROM manga WHERE content_hash = ?",
                 (content_hash,),
             ).fetchone()
             if row:
-                if cover_url and not row["cover_path"]:
-                    db.execute("UPDATE manga SET cover_path = ? WHERE id = ?", (cover_url, row["id"]))
+                db.execute(
+                    """UPDATE manga
+                       SET cover_path = CASE WHEN ? <> '' THEN ? ELSE cover_path END,
+                           is_in_library = CASE WHEN ? = 1 THEN 1 ELSE is_in_library END
+                       WHERE id = ?""",
+                    (cover_url, cover_url, int(in_library), row["id"]),
+                )
                 return int(row["id"]), False
 
             cursor = db.execute(
-                """INSERT INTO manga(title, source_type, source_uri, content_hash, cover_path)
-                   VALUES (?, 'online', ?, ?, ?)""",
-                (clean_title, clean_url, content_hash, cover_url),
+                """INSERT INTO manga(
+                       title, source_type, source_uri, content_hash, cover_path, is_in_library
+                   ) VALUES (?, 'online', ?, ?, ?, ?)""",
+                (clean_title, clean_url, content_hash, cover_url, int(in_library)),
             )
             return int(cursor.lastrowid), True
+
+    def add_to_library(self, manga_id: int) -> None:
+        """Make an existing online reading session visible on the bookshelf."""
+        with connection(self.db_path) as db:
+            db.execute("UPDATE manga SET is_in_library = 1 WHERE id = ?", (manga_id,))
+
+    def is_online_manga_in_library(
+        self, title: str, catalog_id: str | int | None = None
+    ) -> bool:
+        """Return whether an online title is currently saved to the bookshelf."""
+        content_hash = self._online_content_hash(title, catalog_id)
+        with connection(self.db_path) as db:
+            row = db.execute(
+                "SELECT is_in_library FROM manga WHERE content_hash = ?",
+                (content_hash,),
+            ).fetchone()
+        return bool(row and row["is_in_library"])
 
     def add_chapter(self, manga_id: int, title: str, chapter_index: int, page_paths: Iterable[str]) -> int:
         with connection(self.db_path) as db:
@@ -92,7 +121,7 @@ class MangaRepository:
         params: list[object] = []
         if category_id is not None:
             sql += " JOIN manga_category mc ON mc.manga_id = m.id"
-        sql += " WHERE 1=1"
+        sql += " WHERE m.is_in_library = 1"
         if query.strip():
             sql += " AND m.title LIKE ?"
             params.append(f"%{query.strip()}%")
