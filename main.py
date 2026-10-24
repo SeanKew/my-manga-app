@@ -593,6 +593,7 @@ def main(page: ft.Page):
             "last_saved_y": -1,
             "last_saved_at": 0.0,
             "restore_pending": int(initial_scroll) > 0,
+            "ad_filter_enabled": True,
         }
         page.padding = 0
         reading_status = ft.Text(
@@ -640,6 +641,63 @@ def main(page: ft.Page):
             reading_status.value = f"部分网页资源载入失败：{error_text[:100]}"
             page.update()
 
+        def on_web_console_message(event):
+            message = str(getattr(event, "message", "") or "")
+            if not message.startswith(IMAGE_MESSAGE_PREFIX):
+                return
+            image_urls = normalize_image_candidates(message, state["url"])
+            if not image_urls:
+                reading_status.value = (
+                    "没有识别到足够大的漫画图片。这个站点可能使用 canvas、"
+                    "特殊懒加载，或图片不允许脱离原网页显示。"
+                )
+                page.update()
+                return
+            save_position(force=True)
+            try:
+                repository.save_native_reader_state(
+                    manga_id, state["url"], image_urls, 0
+                )
+            except Exception as ex:
+                reading_status.value = f"保存章节图片列表失败：{str(ex)[:100]}"
+                page.update()
+                return
+            open_native_reader(
+                manga_id,
+                title,
+                state["url"],
+                image_urls,
+                cover_url=cover_url,
+                initial_index=0,
+            )
+
+        async def extract_chapter_images(_event=None):
+            reading_status.value = "正在提取当前页面中可见的漫画图片……"
+            page.update()
+            try:
+                await webview.run_javascript(IMAGE_EXTRACTION_JS)
+            except Exception as ex:
+                reading_status.value = f"无法分析当前网页：{str(ex)[:120]}"
+                page.update()
+
+        async def set_ad_filter(enabled: bool):
+            state["ad_filter_enabled"] = bool(enabled)
+            try:
+                script = COSMETIC_AD_FILTER_JS if enabled else DISABLE_AD_FILTER_JS
+                await webview.run_javascript(script)
+                reading_status.value = (
+                    "已启用基础广告过滤（隐藏常见广告元素并拦截部分广告外链）。"
+                    if enabled
+                    else "基础广告过滤已关闭。"
+                )
+            except Exception as ex:
+                reading_status.value = f"无法切换广告过滤：{str(ex)[:100]}"
+            page.update()
+
+        def on_ad_filter_change(event):
+            enabled = bool(getattr(getattr(event, "control", None), "value", True))
+            page.run_task(set_ad_filter, enabled)
+
         # Start on a blank page so JavaScript can be enabled before the target
         # site begins its first navigation. Android WebView defaults may otherwise
         # leave JavaScript disabled for the initial request.
@@ -650,6 +708,8 @@ def main(page: ft.Page):
             on_scroll=on_web_scroll,
             on_url_change=on_url_change,
             on_web_resource_error=on_web_error,
+            on_console_message=on_web_console_message,
+            prevent_links=AD_BLOCK_LINK_PREFIXES,
         )
 
         async def initialize_webview():
@@ -675,6 +735,11 @@ def main(page: ft.Page):
                 state["url"] = actual_url
             except Exception:
                 return
+            try:
+                script = COSMETIC_AD_FILTER_JS if state["ad_filter_enabled"] else DISABLE_AD_FILTER_JS
+                await webview.run_javascript(script)
+            except Exception:
+                pass
             if state["restore_pending"]:
                 try:
                     await asyncio.sleep(0.35)
@@ -759,6 +824,11 @@ def main(page: ft.Page):
                                     ft.Row(
                                         [
                                             ft.TextButton(
+                                                "提取漫画页",
+                                                icon=ft.Icons.MENU_BOOK,
+                                                on_click=lambda e: page.run_task(extract_chapter_images),
+                                            ),
+                                            ft.TextButton(
                                                 "网页后退",
                                                 icon=ft.Icons.ARROW_BACK,
                                                 on_click=lambda e: page.run_task(webpage_back),
@@ -773,10 +843,20 @@ def main(page: ft.Page):
                                                 icon=ft.Icons.OPEN_IN_BROWSER,
                                                 on_click=lambda e: page.run_task(open_current_in_browser),
                                             ),
+                                            ft.Switch(
+                                                label="基础广告过滤",
+                                                value=True,
+                                                on_change=on_ad_filter_change,
+                                            ),
                                         ],
                                         wrap=True,
                                     ),
                                     reading_status,
+                                    ft.Text(
+                                        "说明：此版隐藏常见广告容器并阻挡部分广告外链；不等同完整网络级屏蔽。提取模式只读取网页当前可见的普通图片，不绕过登录或付费限制。",
+                                        size=10,
+                                        color=ft.Colors.GREY_500,
+                                    ),
                                 ],
                                 spacing=2,
                             ),
