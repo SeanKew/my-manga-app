@@ -446,6 +446,7 @@ def main(page: ft.Page):
         page_index = 0
         if progress and progress["chapter_id"] == chapter["id"]:
             page_index = min(max(0, progress["page_index"]), len(chapter["page_paths"]) - 1)
+        push_screen("reader-local")
         render_reader(manga, chapter, page_index)
 
     def render_reader(manga: dict, chapter: dict, page_index: int):
@@ -474,8 +475,7 @@ def main(page: ft.Page):
             )
 
         def back_to_library(_):
-            page.clean()
-            build_library_view()
+            pop_screen()
 
         def move_page(delta: int):
             next_index = page_index + delta
@@ -531,10 +531,12 @@ def main(page: ft.Page):
             show_status("没有找到可用的漫画图片；请返回网页并确认章节已完整加载。", error=True)
             return
 
+        push_screen("reader-native")
         state = {
             "index": max(0, min(int(initial_index), len(urls) - 1)),
             "mode": "single",
         }
+        shelf_button = build_record_shelf_button(manga_id)
 
         def save_state():
             repository.save_native_reader_state(
@@ -543,18 +545,22 @@ def main(page: ft.Page):
 
         def back_to_library(_event=None):
             save_state()
-            page.padding = 12
-            build_library_view()
+            pop_screen()
 
         def return_to_source(_event=None):
             save_state()
-            open_online_reader(
-                manga_id,
-                source_url,
-                title,
-                cover_url=cover_url,
-                initial_scroll=0,
-            )
+            parent_route = page.views[-2].route if len(page.views) > 1 else "/"
+            if "reader-web" in str(parent_route):
+                pop_screen()
+            else:
+                pop_screen()
+                open_online_reader(
+                    manga_id,
+                    source_url,
+                    title,
+                    cover_url=cover_url,
+                    initial_scroll=0,
+                )
 
         def move_page(delta: int):
             next_index = state["index"] + delta
@@ -616,7 +622,7 @@ def main(page: ft.Page):
                                     controls=[
                                         ft.IconButton(
                                             icon=ft.Icons.ARROW_BACK,
-                                            tooltip="返回书架",
+                                            tooltip="返回上一页",
                                             on_click=back_to_library,
                                         ),
                                         ft.Column(
@@ -627,6 +633,7 @@ def main(page: ft.Page):
                                                 ft.Text("Manga.app 阅读模式", size=11, color=ft.Colors.GREY_500),
                                             ],
                                         ),
+                                        shelf_button,
                                         ft.IconButton(
                                             icon=ft.Icons.LANGUAGE,
                                             tooltip="返回来源网页",
