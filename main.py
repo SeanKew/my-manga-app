@@ -9,6 +9,7 @@ import flet as ft
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
 from services.online_catalog_service import MangaCatalogError, display_title, plain_description, search_manga
+from services.reading_sources_service import discover_reading_sources
 from ui.reader_page import load_page_base64
 
 
@@ -266,6 +267,15 @@ def main(page: ft.Page):
                     subtitle = f"{year} · {chapter_text}" + (f" · 评分 {score}/100" if score else "")
                     def show_details(_event, manga=item):
                         detail_text = plain_description(manga) or "资料库暂未提供简介。"
+                        reading_sources = discover_reading_sources(display_title(manga))
+                        source_buttons = [
+                            ft.TextButton(
+                                f"打开 {source['name']}",
+                                on_click=lambda e, url=source["url"]: page.launch_url(url),
+                            )
+                            for source in reading_sources
+                            if source["id"] in {"mangaplus", "webtoon"}
+                        ]
                         detail_dialog = ft.AlertDialog(
                             modal=True,
                             title=ft.Text(display_title(manga)),
@@ -277,15 +287,19 @@ def main(page: ft.Page):
                                         ft.Text(f"章节：{manga.get('chapters') or '未知'} · 卷数：{manga.get('volumes') or '未知'}"),
                                         ft.Text("类型：" + "、".join(manga.get("genres") or []) if manga.get("genres") else "类型：未知"),
                                         ft.Text(detail_text, selectable=True),
-                                        ft.Text("在线章节阅读尚未接入；可以打开资料来源查看官方外链。", color=ft.Colors.GREY_400),
+                                        ft.Text(
+                                            "自动发现的官方阅读候选来源。是否有这部作品、哪些章节免费，以及你所在地区能否阅读，需以平台页面为准。",
+                                            color=ft.Colors.GREY_400,
+                                        ),
                                     ],
                                     tight=True,
                                     scroll=ft.ScrollMode.AUTO,
                                 ),
                             ),
                             actions=[
+                                *source_buttons,
                                 ft.TextButton(
-                                    "打开 AniList 页面",
+                                    "打开 AniList 资料",
                                     on_click=lambda e, url=manga.get("siteUrl"): page.launch_url(url) if url else None,
                                 ),
                                 ft.TextButton("关闭", on_click=lambda e: close_details(detail_dialog)),
