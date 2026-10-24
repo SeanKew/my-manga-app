@@ -8,7 +8,7 @@ import flet as ft
 
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
-from services.online_catalog_service import MangaCatalogError, display_title, plain_description, search_manga
+from services.online_catalog_service import MangaCatalogError, display_title, english_title, plain_description, search_manga
 from services.reading_sources_service import discover_reading_sources
 from ui.reader_page import load_page_base64
 
@@ -22,6 +22,8 @@ def main(page: ft.Page):
     repository = MangaRepository()
     picker = ft.FilePicker()
     page.services.append(picker)
+    url_launcher = ft.UrlLauncher()
+    page.services.append(url_launcher)
 
     status = ft.Text("准备就绪。支持 CBZ/ZIP 漫画压缩包和单张图片。", color=ft.Colors.GREY_400)
     search_box = ft.TextField(
@@ -46,6 +48,73 @@ def main(page: ft.Page):
         status.value = message
         status.color = ft.Colors.RED_300 if error else ft.Colors.GREY_400
         page.update()
+
+    async def open_online_url(url: str, in_app: bool = False):
+        """Open a discovered reading link with an awaited Flet URL launcher."""
+        try:
+            if in_app:
+                await url_launcher.launch_url(
+                    url,
+                    mode=ft.LaunchMode.IN_APP_WEB_VIEW,
+                    web_view_configuration=ft.WebViewConfiguration(
+                        enable_javascript=True,
+                        enable_dom_storage=True,
+                    ),
+                )
+            else:
+                await url_launcher.launch_url(
+                    url,
+                    mode=ft.LaunchMode.EXTERNAL_APPLICATION,
+                )
+        except Exception as ex:
+            dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("无法打开链接"),
+                content=ft.Text(
+                    "系统未能打开这个页面。请确认网络连接，或改用外部浏览器。\n"
+                    f"错误信息：{str(ex)[:240]}"
+                ),
+                actions=[
+                    ft.TextButton("关闭", on_click=lambda e: page.pop_dialog()),
+                ],
+            )
+            page.show_dialog(dialog)
+
+    def build_source_card(source: dict) -> ft.Control:
+        url = source["url"]
+        return ft.Container(
+            padding=10,
+            content=ft.Column(
+                [
+                    ft.Text(source["name"], weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        f"语言：{source.get('language', '依平台而定')} · {source.get('availability', '需确认')}",
+                        size=12,
+                        color=ft.Colors.GREY_400,
+                    ),
+                    ft.Text(source.get("description", ""), size=12),
+                    ft.Row(
+                        [
+                            ft.TextButton(
+                                "应用内打开",
+                                on_click=lambda e, target=url: page.run_task(
+                                    open_online_url, target, True
+                                ),
+                            ),
+                            ft.TextButton(
+                                "外部浏览器打开",
+                                on_click=lambda e, target=url: page.run_task(
+                                    open_online_url, target, False
+                                ),
+                            ),
+                        ],
+                        wrap=True,
+                    ),
+                ],
+                tight=True,
+                spacing=4,
+            ),
+        )
 
     def refresh_library():
         manga_list.controls.clear()
@@ -260,22 +329,26 @@ def main(page: ft.Page):
                 for item in items:
                     cover = (item.get("coverImage") or {}).get("large") or (item.get("coverImage") or {}).get("extraLarge")
                     title = display_title(item)
+                    english_name = english_title(item)
                     year = (item.get("startDate") or {}).get("year") or "年份未知"
                     chapters = item.get("chapters")
                     chapter_text = f"{chapters} 话" if chapters else "话数未知"
                     score = item.get("averageScore")
                     subtitle = f"{year} · {chapter_text}" + (f" · 评分 {score}/100" if score else "")
+                    if english_name and english_name != title:
+                        subtitle = f"{english_name} · {subtitle}"
                     def show_details(_event, manga=item):
-                        detail_text = plain_description(manga) or "资料库暂未提供简介。"
-                        reading_sources = discover_reading_sources(display_title(manga))
-                        source_buttons = [
-                            ft.TextButton(
-                                f"打开 {source['name']}",
-                                on_click=lambda e, url=source["url"]: page.launch_url(url),
-                            )
-                            for source in reading_sources
-                            if source["id"] in {"mangaplus", "webtoon"}
-                        ]
+                        raw_description = plain_description(manga)
+                        has_chinese_description = any("\u3400" <= ch <= "\u9fff" for ch in raw_description)
+                        detail_text = (
+                            raw_description
+                            if has_chinese_description
+                            else "目前没有可用的中文简介；请查看下方中文阅读来源或平台提供的语言选项。"
+                        )
+                        reading_sources = discover_reading_sources(
+                            display_title(manga), english_title(manga)
+                        )
+                        source_controls = [build_source_card(source) for source in reading_sources]
                         detail_dialog = ft.AlertDialog(
                             modal=True,
                             title=ft.Text(display_title(manga)),
@@ -288,19 +361,19 @@ def main(page: ft.Page):
                                         ft.Text("类型：" + "、".join(manga.get("genres") or []) if manga.get("genres") else "类型：未知"),
                                         ft.Text(detail_text, selectable=True),
                                         ft.Text(
-                                            "自动发现的官方阅读候选来源。是否有这部作品、哪些章节免费，以及你所在地区能否阅读，需以平台页面为准。",
+                                            "下列链接分别打开应用内网页或外部浏览器。平台可能只提供部分免费章节，并可能因地区、语言或账号而不同。",
                                             color=ft.Colors.GREY_400,
                                         ),
+                                        *source_controls,
                                     ],
                                     tight=True,
                                     scroll=ft.ScrollMode.AUTO,
                                 ),
                             ),
                             actions=[
-                                *source_buttons,
                                 ft.TextButton(
                                     "打开 AniList 资料",
-                                    on_click=lambda e, url=manga.get("siteUrl"): page.launch_url(url) if url else None,
+                                    on_click=lambda e, url=manga.get("siteUrl"): page.run_task(open_online_url, url, False) if url else None,
                                 ),
                                 ft.TextButton("关闭", on_click=lambda e: close_details(detail_dialog)),
                             ],
@@ -346,14 +419,14 @@ def main(page: ft.Page):
     def build_online_view():
         query_box = ft.TextField(
             label="联网搜索漫画",
-            hint_text="输入英文、日文或罗马字标题",
+            hint_text="输入中文、英文或日文标题，例如：一拳超人",
             prefix_icon=ft.Icons.SEARCH,
             expand=True,
             on_submit=lambda e: page.run_task(run_online_search, query_box.value or "", results, message, search_button),
         )
         results = ft.ListView(expand=True, spacing=8, auto_scroll=False)
         message = ft.Text(
-            "使用 AniList 公共 API 搜索漫画元数据；需要网络连接。",
+            "支持中文、英文和日文搜索。资料来源为 AniList，阅读来源会单独列出。",
             color=ft.Colors.GREY_400,
         )
         search_button = ft.Button(
@@ -373,7 +446,7 @@ def main(page: ft.Page):
             ft.Divider(),
             results,
             ft.Text(
-                "在线搜索目前提供标题、封面、简介和资料页链接；不会直接托管或抓取漫画章节。",
+                "优先显示可识别的中文标题；部分作品暂时没有中文简介。阅读链接会标明语言与免费状态需进一步确认。",
                 size=12,
                 color=ft.Colors.GREY_500,
             ),
