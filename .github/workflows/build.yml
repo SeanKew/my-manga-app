@@ -1,10 +1,13 @@
 name: Build Flet APK
+
 on:
   push:
+    branches: [ main, "feature/**" ]
+  pull_request:
     branches: [ main ]
 
 jobs:
-  build:
+  test-and-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,37 +15,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: pip
 
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: "17"
+          distribution: temurin
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flet cloudscraper beautifulsoup4
+          python -m pip install -r requirements.txt
 
-      - name: Run Environment Check
+      - name: Check project files
         run: python check_env.py
 
-      - name: Build Android APK
-        run: |
-          # 终极极简指令：打包当前目录(.)，指定入口(main)
-          flet build apk . --module-name main --verbose
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
 
-      - name: Upload Artifact
+      - name: Build Android APK
+        run: flet build apk . --module-name main --verbose
+
+      - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: manga-purifier-core
+          name: manga-app-android-apk
           path: build/apk/*.apk
-          retention-days: 5
+          retention-days: 7
