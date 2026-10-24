@@ -11,6 +11,8 @@ REQUIRED_FILES = (
     Path("data/database.py"),
     Path("data/repository.py"),
     Path("services/local_import_service.py"),
+    Path("services/online_catalog_service.py"),
+    Path("tests/test_online_catalog.py"),
     Path("ui/reader_page.py"),
 )
 
