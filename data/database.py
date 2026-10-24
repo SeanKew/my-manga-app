@@ -65,6 +65,14 @@ def initialize_database(db_path: str | Path) -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS online_reader_state (
+                manga_id INTEGER PRIMARY KEY REFERENCES manga(id) ON DELETE CASCADE,
+                source_url TEXT NOT NULL DEFAULT '',
+                image_urls_json TEXT NOT NULL DEFAULT '[]',
+                page_index INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS category (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE COLLATE NOCASE
