@@ -1,13 +1,14 @@
 """Manga.app: local manga library and reader MVP."""
 from __future__ import annotations
 
-import base64
+import asyncio
 from pathlib import Path
 
 import flet as ft
 
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
+from services.online_catalog_service import MangaCatalogError, display_title, plain_description, search_manga
 from ui.reader_page import load_page_base64
 
 
@@ -237,12 +238,145 @@ def main(page: ft.Page):
         )
         page.update()
 
+
+    async def run_online_search(query: str, results: ft.ListView, message: ft.Text, button: ft.Button):
+        query = query.strip()
+        if not query:
+            message.value = "请输入漫画名称后再搜索。"
+            results.controls.clear()
+            page.update()
+            return
+        button.disabled = True
+        message.value = "正在联网搜索 AniList 漫画资料库……"
+        results.controls.clear()
+        page.update()
+        try:
+            items = await asyncio.to_thread(search_manga, query)
+            if not items:
+                message.value = "没有找到结果，试试英文或日文标题。"
+            else:
+                message.value = f"找到 {len(items)} 条结果。这里展示的是漫画资料，不代表提供在线章节。"
+                for item in items:
+                    cover = (item.get("coverImage") or {}).get("large") or (item.get("coverImage") or {}).get("extraLarge")
+                    title = display_title(item)
+                    year = (item.get("startDate") or {}).get("year") or "年份未知"
+                    chapters = item.get("chapters")
+                    chapter_text = f"{chapters} 话" if chapters else "话数未知"
+                    score = item.get("averageScore")
+                    subtitle = f"{year} · {chapter_text}" + (f" · 评分 {score}/100" if score else "")
+                    def show_details(_event, manga=item):
+                        detail_text = plain_description(manga) or "资料库暂未提供简介。"
+                        detail_dialog = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text(display_title(manga)),
+                            content=ft.Container(
+                                width=420,
+                                content=ft.Column(
+                                    [
+                                        ft.Text(f"状态：{manga.get('status') or '未知'}"),
+                                        ft.Text(f"章节：{manga.get('chapters') or '未知'} · 卷数：{manga.get('volumes') or '未知'}"),
+                                        ft.Text("类型：" + "、".join(manga.get("genres") or []) if manga.get("genres") else "类型：未知"),
+                                        ft.Text(detail_text, selectable=True),
+                                        ft.Text("在线章节阅读尚未接入；可以打开资料来源查看官方外链。", color=ft.Colors.GREY_400),
+                                    ],
+                                    tight=True,
+                                    scroll=ft.ScrollMode.AUTO,
+                                ),
+                            ),
+                            actions=[
+                                ft.TextButton(
+                                    "打开 AniList 页面",
+                                    on_click=lambda e, url=manga.get("siteUrl"): page.launch_url(url) if url else None,
+                                ),
+                                ft.TextButton("关闭", on_click=lambda e: close_details(detail_dialog)),
+                            ],
+                            actions_alignment=ft.MainAxisAlignment.END,
+                        )
+                        page.show_dialog(detail_dialog)
+                    results.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                padding=10,
+                                content=ft.Row(
+                                    [
+                                        ft.Image(src=cover, width=76, height=108, fit=ft.ImageFit.CONTAIN)
+                                        if cover else ft.Container(width=76, height=108, alignment=ft.Alignment.CENTER, content=ft.Icon(ft.Icons.MENU_BOOK)),
+                                        ft.Column(
+                                            [
+                                                ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=3),
+                                                ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
+                                                ft.Text(plain_description(item, 180) or "暂无简介", size=12, max_lines=3),
+                                                ft.TextButton("查看详情", on_click=show_details),
+                                            ],
+                                            expand=True,
+                                            spacing=4,
+                                        ),
+                                    ],
+                                    vertical_alignment=ft.CrossAxisAlignment.START,
+                                ),
+                            ),
+                        )
+                    )
+        except MangaCatalogError as ex:
+            message.value = f"联网搜索失败：{ex}"
+        except Exception as ex:
+            message.value = f"搜索时发生错误：{ex}"
+        finally:
+            button.disabled = False
+            page.update()
+
+    def close_details(dialog):
+        page.pop_dialog()
+        page.update()
+
+    def build_online_view():
+        query_box = ft.TextField(
+            label="联网搜索漫画",
+            hint_text="输入英文、日文或罗马字标题",
+            prefix_icon=ft.Icons.SEARCH,
+            expand=True,
+            on_submit=lambda e: page.run_task(run_online_search, query_box.value or "", results, message, search_button),
+        )
+        results = ft.ListView(expand=True, spacing=8, auto_scroll=False)
+        message = ft.Text(
+            "使用 AniList 公共 API 搜索漫画元数据；需要网络连接。",
+            color=ft.Colors.GREY_400,
+        )
+        search_button = ft.Button(
+            "搜索",
+            icon=ft.Icons.SEARCH,
+            on_click=lambda e: page.run_task(run_online_search, query_box.value or "", results, message, search_button),
+        )
+        page.clean()
+        page.add(
+            ft.AppBar(
+                title=ft.Text("Manga.app · 在线发现"),
+                leading=ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=lambda e: build_library_view()),
+            ),
+            ft.Text("联网搜索", size=20, weight=ft.FontWeight.BOLD),
+            ft.Row([query_box, search_button]),
+            message,
+            ft.Divider(),
+            results,
+            ft.Text(
+                "在线搜索目前提供标题、封面、简介和资料页链接；不会直接托管或抓取漫画章节。",
+                size=12,
+                color=ft.Colors.GREY_500,
+            ),
+        )
+        page.update()
+
     def build_library_view():
         page.clean()
         page.add(
             ft.AppBar(
                 title=ft.Text("Manga.app · 个人漫画库"),
                 actions=[
+                    ft.IconButton(
+                        icon=ft.Icons.PUBLIC,
+                        tooltip="联网搜索漫画",
+                        on_click=lambda _: build_online_view(),
+                    ),
                     ft.IconButton(
                         icon=ft.Icons.REFRESH,
                         tooltip="刷新资料库",
