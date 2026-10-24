@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 
 def storage_root() -> Path:
@@ -21,9 +23,19 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return connection
 
 
+@contextmanager
+def connection(db_path: str | Path) -> Iterator[sqlite3.Connection]:
+    db = connect(db_path)
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
+
+
 def initialize_database(db_path: str | Path) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    with connect(db_path) as db:
+    with connection(db_path) as db:
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS manga (
