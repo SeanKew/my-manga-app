@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from data.database import connect, initialize_database, storage_root
+from data.database import connection, initialize_database, storage_root
 
 
 class MangaRepository:
@@ -17,7 +17,7 @@ class MangaRepository:
         initialize_database(self.db_path)
 
     def find_by_hash(self, content_hash: str) -> dict | None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             row = db.execute("SELECT * FROM manga WHERE content_hash = ?", (content_hash,)).fetchone()
             return dict(row) if row else None
 
@@ -32,7 +32,7 @@ class MangaRepository:
         existing = self.find_by_hash(content_hash)
         if existing:
             return int(existing["id"]), False
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             cursor = db.execute(
                 """INSERT INTO manga(title, source_type, source_uri, content_hash, cover_path)
                    VALUES (?, ?, ?, ?, ?)""",
@@ -41,7 +41,7 @@ class MangaRepository:
             return int(cursor.lastrowid), True
 
     def add_chapter(self, manga_id: int, title: str, chapter_index: int, page_paths: Iterable[str]) -> int:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             cursor = db.execute(
                 """INSERT INTO chapter(manga_id, title, chapter_index, page_paths_json)
                    VALUES (?, ?, ?, ?)""",
@@ -69,24 +69,24 @@ class MangaRepository:
             sql += " AND mc.category_id = ?"
             params.append(category_id)
         sql += " ORDER BY m.created_at DESC, m.id DESC"
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             return [dict(row) for row in db.execute(sql, params).fetchall()]
 
     def get_manga(self, manga_id: int) -> dict | None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             row = db.execute("SELECT * FROM manga WHERE id = ?", (manga_id,)).fetchone()
             return dict(row) if row else None
 
     def set_favorite(self, manga_id: int, favorite: bool) -> None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             db.execute("UPDATE manga SET is_favorite = ? WHERE id = ?", (int(favorite), manga_id))
 
     def delete_manga(self, manga_id: int) -> None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             db.execute("DELETE FROM manga WHERE id = ?", (manga_id,))
 
     def list_chapters(self, manga_id: int) -> list[dict]:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             rows = db.execute(
                 "SELECT * FROM chapter WHERE manga_id = ? ORDER BY chapter_index",
                 (manga_id,),
@@ -99,12 +99,12 @@ class MangaRepository:
         return chapters
 
     def get_progress(self, manga_id: int) -> dict | None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             row = db.execute("SELECT * FROM reading_progress WHERE manga_id = ?", (manga_id,)).fetchone()
             return dict(row) if row else None
 
     def save_progress(self, manga_id: int, chapter_id: int, page_index: int) -> None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             db.execute(
                 """INSERT INTO reading_progress(manga_id, chapter_id, page_index, updated_at)
                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
@@ -116,20 +116,20 @@ class MangaRepository:
             )
 
     def list_categories(self) -> list[dict]:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             return [dict(row) for row in db.execute("SELECT * FROM category ORDER BY name").fetchall()]
 
     def add_category(self, name: str) -> int:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("分类名称不能为空")
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             db.execute("INSERT OR IGNORE INTO category(name) VALUES (?)", (clean_name,))
             row = db.execute("SELECT id FROM category WHERE name = ?", (clean_name,)).fetchone()
             return int(row["id"])
 
     def assign_category(self, manga_id: int, category_id: int, assigned: bool = True) -> None:
-        with connect(self.db_path) as db:
+        with connection(self.db_path) as db:
             if assigned:
                 db.execute(
                     "INSERT OR IGNORE INTO manga_category(manga_id, category_id) VALUES (?, ?)",
