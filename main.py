@@ -7,7 +7,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import flet as ft
-import flet_webview as fwv
+
+try:
+    import flet_webview as fwv
+except ImportError:
+    # Keep the rest of the app usable in runtimes that did not bundle the extension.
+    fwv = None
 
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
@@ -369,6 +374,13 @@ def main(page: ft.Page):
         parsed = urlparse(str(initial_url or ""))
         if parsed.scheme not in {"https", "http"} or not parsed.netloc:
             show_status("无法在阅读器中打开：来源地址无效。", error=True)
+            return
+        if fwv is None:
+            show_status(
+                "当前安装包缺少内置网页组件，正在尝试用外部浏览器打开。请重新安装最新构建以启用应用内阅读。",
+                error=True,
+            )
+            page.run_task(open_online_url, initial_url, False)
             return
         manga = repository.get_manga(manga_id)
         if not manga:
