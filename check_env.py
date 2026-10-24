@@ -18,6 +18,7 @@ REQUIRED_FILES = (
     Path("tests/test_reading_sources.py"),
     Path("tests/test_native_reading_service.py"),
     Path("tests/test_native_reader_state.py"),
+    Path("tests/test_shelf_membership.py"),
     Path("ui/reader_page.py"),
 )
 
