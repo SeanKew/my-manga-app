@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from pathlib import Path
+from urllib.parse import urlparse
+
+import flet_webview as fwv
 from pathlib import Path
 
 import flet as ft
@@ -84,10 +89,28 @@ def main(page: ft.Page):
             )
             page.show_dialog(dialog)
 
-    def build_source_card(source: dict) -> ft.Control:
+    def open_source_in_app(source: dict, manga: dict):
+        target_url = str(source.get("url") or "")
+        parsed = urlparse(target_url)
+        if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            show_status("这个来源不是有效的网页地址。", error=True)
+            return
+        title = display_title(manga)
+        cover_url = (manga.get("coverImage") or {}).get("large") or (manga.get("coverImage") or {}).get("extraLarge") or ""
+        manga_id, _created = repository.add_online_manga(
+            title=title,
+            source_uri=target_url,
+            cover_url=cover_url,
+            catalog_id=manga.get("id"),
+        )
+        open_online_reader(manga_id, target_url, title, cover_url=cover_url, initial_scroll=0)
+
+    def build_source_card(source: dict, manga: dict) -> ft.Control:
         url = source["url"]
         return ft.Container(
             padding=10,
+            border=ft.Border.all(1, ft.Colors.GREY_800),
+            border_radius=10,
             content=ft.Column(
                 [
                     ft.Text(source["name"], weight=ft.FontWeight.BOLD),
@@ -100,16 +123,12 @@ def main(page: ft.Page):
                     ft.Row(
                         [
                             ft.TextButton(
-                                "应用内打开",
-                                on_click=lambda e, target=url: page.run_task(
-                                    open_online_url, target, True
-                                ),
+                                "在 Manga.app 内阅读",
+                                on_click=lambda e, item=source, book=manga: open_source_in_app(item, book),
                             ),
                             ft.TextButton(
                                 "外部浏览器打开",
-                                on_click=lambda e, target=url: page.run_task(
-                                    open_online_url, target, False
-                                ),
+                                on_click=lambda e, target=url: page.run_task(open_online_url, target, False),
                             ),
                         ],
                         wrap=True,
@@ -137,25 +156,35 @@ def main(page: ft.Page):
             chapters = repository.list_chapters(item["id"])
             page_count = sum(len(chapter["page_paths"]) for chapter in chapters)
             progress = repository.get_progress(item["id"])
-            progress_text = "尚未阅读"
-            if progress:
-                progress_text = f"上次阅读第 {progress['page_index'] + 1} 页"
+            is_online = item.get("source_type") == "online"
+            if is_online:
+                progress_text = "点击继续在线阅读"
+                if progress and progress.get("source_url"):
+                    progress_text = "上次阅读位置已保存"
+                page_summary = "在线漫画"
+            else:
+                progress_text = "尚未阅读"
+                if progress:
+                    progress_text = f"上次阅读第 {progress['page_index'] + 1} 页"
+                page_summary = f"{page_count} 页"
+            cover_path = item.get("cover_path") or ""
+            cover_control = (
+                ft.Image(src=cover_path, width=54, height=76, fit=ft.BoxFit.CONTAIN)
+                if is_online and cover_path.startswith(("https://", "http://"))
+                else ft.Icon(ft.Icons.MENU_BOOK, size=34, color=ft.Colors.CYAN_300)
+            )
             manga_list.controls.append(
                 ft.Card(
                     content=ft.Container(
                         padding=10,
                         content=ft.Row(
                             [
-                                ft.Icon(
-                                    ft.Icons.MENU_BOOK,
-                                    size=34,
-                                    color=ft.Colors.CYAN_300,
-                                ),
+                                cover_control,
                                 ft.Column(
                                     [
                                         ft.Text(item["title"], weight=ft.FontWeight.BOLD, max_lines=2),
                                         ft.Text(
-                                            f"{page_count} 页 · {progress_text}",
+                                            f"{page_summary} · {progress_text}",
                                             size=12,
                                             color=ft.Colors.GREY_400,
                                         ),
@@ -229,6 +258,20 @@ def main(page: ft.Page):
         manga = repository.get_manga(manga_id)
         if not manga:
             show_status("找不到这本漫画。", error=True)
+            return
+        if manga.get("source_type") == "online":
+            progress = repository.get_progress(manga_id) or {}
+            source_url = progress.get("source_url") or manga.get("source_uri") or ""
+            if not source_url:
+                show_status("这本在线漫画还没有阅读来源，请重新从在线发现页打开。", error=True)
+                return
+            open_online_reader(
+                manga_id,
+                source_url,
+                manga["title"],
+                cover_url=manga.get("cover_path") or "",
+                initial_scroll=int(progress.get("page_index") or 0),
+            )
             return
         chapters = repository.list_chapters(manga_id)
         if not chapters or not chapters[0]["page_paths"]:
@@ -313,6 +356,200 @@ def main(page: ft.Page):
         page.update()
 
 
+    def open_online_reader(
+        manga_id: int,
+        initial_url: str,
+        title: str,
+        cover_url: str = "",
+        initial_scroll: int = 0,
+    ):
+        """Read provider-owned pages in-app and persist the URL + scroll position."""
+        parsed = urlparse(str(initial_url or ""))
+        if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            show_status("无法在阅读器中打开：来源地址无效。", error=True)
+            return
+        manga = repository.get_manga(manga_id)
+        if not manga:
+            show_status("找不到这本漫画。", error=True)
+            return
+
+        state = {
+            "url": initial_url,
+            "scroll_y": max(0, int(initial_scroll)),
+            "last_saved_y": -1,
+            "last_saved_at": 0.0,
+            "restore_pending": int(initial_scroll) > 0,
+        }
+        page.padding = 0
+        reading_status = ft.Text(
+            "阅读位置会自动保存在本机书架。",
+            size=12,
+            color=ft.Colors.GREY_400,
+        )
+        favorite_button = ft.IconButton(
+            icon=ft.Icons.FAVORITE if manga.get("is_favorite") else ft.Icons.FAVORITE_BORDER,
+            icon_color=ft.Colors.PINK_300 if manga.get("is_favorite") else None,
+            tooltip="取消收藏" if manga.get("is_favorite") else "收藏这部漫画",
+        )
+
+        def save_position(force: bool = False):
+            now = time.monotonic()
+            if not force and now - state["last_saved_at"] < 1.0:
+                return
+            repository.save_online_progress(manga_id, state["url"], state["scroll_y"])
+            state["last_saved_y"] = state["scroll_y"]
+            state["last_saved_at"] = now
+            reading_status.value = "阅读位置已自动保存"
+
+        def on_web_scroll(event):
+            try:
+                state["scroll_y"] = max(0, int(float(event.y)))
+            except (TypeError, ValueError, AttributeError):
+                return
+            save_position()
+
+        def on_url_change(event):
+            changed_url = str(getattr(event, "data", "") or "")
+            parsed_url = urlparse(changed_url)
+            if parsed_url.scheme not in {"https", "http"} or not parsed_url.netloc:
+                return
+            state["url"] = changed_url
+            state["scroll_y"] = 0
+            repository.save_online_progress(manga_id, state["url"], 0)
+            reading_status.value = "章节地址已更新，阅读位置自动保存"
+
+        def on_web_error(event):
+            error_text = str(getattr(event, "data", "") or "未知错误")
+            reading_status.value = f"部分网页资源载入失败：{error_text[:100]}"
+            page.update()
+
+        webview = fwv.WebView(
+            url=initial_url,
+            expand=True,
+            bgcolor="#111216",
+            on_scroll=on_web_scroll,
+            on_url_change=on_url_change,
+            on_web_resource_error=on_web_error,
+        )
+
+        async def on_page_ended(_event):
+            try:
+                actual_url = await webview.get_current_url()
+                if actual_url:
+                    state["url"] = actual_url
+            except Exception:
+                pass
+            if state["restore_pending"]:
+                try:
+                    await asyncio.sleep(0.35)
+                    await webview.scroll_to(0, state["scroll_y"])
+                except Exception:
+                    pass
+                state["restore_pending"] = False
+            save_position(force=True)
+            page.update()
+
+        webview.on_page_ended = on_page_ended
+
+        def back_to_library(_event=None):
+            save_position(force=True)
+            page.padding = 12
+            build_library_view()
+
+        async def webpage_back(_event=None):
+            try:
+                if await webview.can_go_back():
+                    await webview.go_back()
+                else:
+                    back_to_library()
+            except Exception:
+                back_to_library()
+
+        async def reload_page(_event=None):
+            try:
+                await webview.reload()
+            except Exception as ex:
+                reading_status.value = f"刷新失败：{str(ex)[:120]}"
+                page.update()
+
+        async def open_current_in_browser(_event=None):
+            try:
+                current_url = await webview.get_current_url()
+            except Exception:
+                current_url = state["url"]
+            await open_online_url(current_url or state["url"], False)
+
+        def toggle_online_favorite(_event=None):
+            current = repository.get_manga(manga_id) or {}
+            favorite = not bool(current.get("is_favorite"))
+            repository.set_favorite(manga_id, favorite)
+            favorite_button.icon = ft.Icons.FAVORITE if favorite else ft.Icons.FAVORITE_BORDER
+            favorite_button.icon_color = ft.Colors.PINK_300 if favorite else None
+            favorite_button.tooltip = "取消收藏" if favorite else "收藏这部漫画"
+            page.update()
+
+        favorite_button.on_click = toggle_online_favorite
+        page.clean()
+        page.add(
+            ft.SafeArea(
+                expand=True,
+                content=ft.Column(
+                    expand=True,
+                    spacing=0,
+                    controls=[
+                        ft.Container(
+                            padding=8,
+                            content=ft.Row(
+                                [
+                                    ft.IconButton(
+                                        icon=ft.Icons.ARROW_BACK,
+                                        tooltip="返回书架",
+                                        on_click=back_to_library,
+                                    ),
+                                    ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=1, expand=True),
+                                    favorite_button,
+                                ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                        ),
+                        ft.Divider(height=1, color=ft.Colors.GREY_800),
+                        ft.Container(content=webview, expand=True),
+                        ft.Divider(height=1, color=ft.Colors.GREY_800),
+                        ft.Container(
+                            padding=8,
+                            content=ft.Column(
+                                [
+                                    ft.Row(
+                                        [
+                                            ft.TextButton(
+                                                "网页后退",
+                                                icon=ft.Icons.ARROW_BACK,
+                                                on_click=lambda e: page.run_task(webpage_back),
+                                            ),
+                                            ft.TextButton(
+                                                "刷新",
+                                                icon=ft.Icons.REFRESH,
+                                                on_click=lambda e: page.run_task(reload_page),
+                                            ),
+                                            ft.TextButton(
+                                                "外部打开",
+                                                icon=ft.Icons.OPEN_IN_BROWSER,
+                                                on_click=lambda e: page.run_task(open_current_in_browser),
+                                            ),
+                                        ],
+                                        wrap=True,
+                                    ),
+                                    reading_status,
+                                ],
+                                spacing=2,
+                            ),
+                        ),
+                    ],
+                ),
+            )
+        )
+        page.update()
+
     async def run_online_search(query: str, results: ft.ListView, message: ft.Text, button: ft.Button):
         query = query.strip()
         if not query:
@@ -355,7 +592,7 @@ def main(page: ft.Page):
                         reading_sources = discover_reading_sources(
                             display_title(manga), english_title(manga)
                         )
-                        source_controls = [build_source_card(source) for source in reading_sources]
+                        source_controls = [build_source_card(source, manga) for source in reading_sources]
                         detail_dialog = ft.AlertDialog(
                             modal=True,
                             title=ft.Text(display_title(manga)),
@@ -461,6 +698,7 @@ def main(page: ft.Page):
         page.update()
 
     def build_library_view():
+        page.padding = 12
         page.clean()
         page.add(
             ft.AppBar(

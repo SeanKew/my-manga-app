@@ -80,3 +80,8 @@ def initialize_database(db_path: str | Path) -> None:
             CREATE INDEX IF NOT EXISTS idx_chapter_manga ON chapter(manga_id, chapter_index);
             """
         )
+
+        progress_columns = {row["name"] for row in db.execute("PRAGMA table_info(reading_progress)").fetchall()}
+        if "source_url" not in progress_columns:
+            db.execute("ALTER TABLE reading_progress ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
+

@@ -1,6 +1,7 @@
 """Database operations used by the library UI and import service."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Iterable
@@ -37,6 +38,38 @@ class MangaRepository:
                 """INSERT INTO manga(title, source_type, source_uri, content_hash, cover_path)
                    VALUES (?, ?, ?, ?, ?)""",
                 (title, source_type, source_uri, content_hash, cover_path),
+            )
+            return int(cursor.lastrowid), True
+
+    def add_online_manga(
+        self,
+        title: str,
+        source_uri: str,
+        cover_url: str = "",
+        catalog_id: str | int | None = None,
+    ) -> tuple[int, bool]:
+        """Add a web-reading entry to the library, deduplicated by catalog ID or title."""
+        clean_title = " ".join(str(title or "").split())
+        clean_url = str(source_uri or "").strip()
+        if not clean_title or not clean_url:
+            raise ValueError("漫画标题和阅读来源不能为空")
+
+        identity = f"catalog:{catalog_id}" if catalog_id is not None else f"title:{clean_title.casefold()}"
+        content_hash = hashlib.sha256(f"online-manga:{identity}".encode("utf-8")).hexdigest()
+        with connection(self.db_path) as db:
+            row = db.execute(
+                "SELECT id, cover_path FROM manga WHERE content_hash = ?",
+                (content_hash,),
+            ).fetchone()
+            if row:
+                if cover_url and not row["cover_path"]:
+                    db.execute("UPDATE manga SET cover_path = ? WHERE id = ?", (cover_url, row["id"]))
+                return int(row["id"]), False
+
+            cursor = db.execute(
+                """INSERT INTO manga(title, source_type, source_uri, content_hash, cover_path)
+                   VALUES (?, 'online', ?, ?, ?)""",
+                (clean_title, clean_url, content_hash, cover_url),
             )
             return int(cursor.lastrowid), True
 
@@ -113,6 +146,20 @@ class MangaRepository:
                      page_index = excluded.page_index,
                      updated_at = CURRENT_TIMESTAMP""",
                 (manga_id, chapter_id, max(0, page_index)),
+            )
+
+    def save_online_progress(self, manga_id: int, source_url: str, scroll_y: int) -> None:
+        """Save the current web page URL and vertical scroll position for an online manga."""
+        with connection(self.db_path) as db:
+            db.execute(
+                """INSERT INTO reading_progress(manga_id, chapter_id, page_index, updated_at, source_url)
+                   VALUES (?, NULL, ?, CURRENT_TIMESTAMP, ?)
+                   ON CONFLICT(manga_id) DO UPDATE SET
+                     chapter_id = NULL,
+                     page_index = excluded.page_index,
+                     updated_at = CURRENT_TIMESTAMP,
+                     source_url = excluded.source_url""",
+                (manga_id, max(0, int(scroll_y)), str(source_url or "")),
             )
 
     def list_categories(self) -> list[dict]:

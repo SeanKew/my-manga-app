@@ -29,6 +29,9 @@ def main() -> int:
     if importlib.util.find_spec("flet") is None:
         print("Missing dependency: flet. Run: python -m pip install -r requirements.txt")
         return 1
+    if importlib.util.find_spec("flet_webview") is None:
+        print("Missing dependency: flet-webview. Run: python -m pip install -r requirements.txt")
+        return 1
     print("Environment check passed.")
     return 0
 
