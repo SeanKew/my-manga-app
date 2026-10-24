@@ -4,6 +4,7 @@ from unittest.mock import patch
 from services.online_catalog_service import (
     MangaCatalogError,
     display_title,
+    english_title,
     get_manga_details,
     plain_description,
     search_manga,
@@ -13,6 +14,7 @@ from services.online_catalog_service import (
 SAMPLE = {
     "id": 123,
     "title": {"english": "Example Manga", "native": "例"},
+    "synonyms": [],
     "description": "<b>Hello</b> &amp; world",
     "siteUrl": "https://anilist.co/manga/123",
 }
@@ -41,6 +43,18 @@ class OnlineCatalogTests(unittest.TestCase):
         request.return_value = {"Media": None}
         with self.assertRaises(MangaCatalogError):
             get_manga_details(123)
+
+    def test_chinese_synonym_is_preferred_for_display(self):
+        manga = {
+            "title": {"english": "One-Punch Man", "native": "ワンパンマン"},
+            "synonyms": ["一拳超人"],
+        }
+        self.assertEqual("一拳超人", display_title(manga))
+        self.assertEqual("One-Punch Man", english_title(manga))
+
+    def test_known_popular_title_has_chinese_fallback(self):
+        manga = {"title": {"english": "One-Punch Man", "native": "ワンパンマン"}}
+        self.assertEqual("一拳超人", display_title(manga))
 
     def test_title_and_description_are_safely_formatted(self):
         self.assertEqual("Example Manga", display_title(SAMPLE))
