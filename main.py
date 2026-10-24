@@ -6,10 +6,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-import flet_webview as fwv
-from pathlib import Path
-
 import flet as ft
+import flet_webview as fwv
 
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
@@ -103,6 +101,10 @@ def main(page: ft.Page):
             cover_url=cover_url,
             catalog_id=manga.get("id"),
         )
+        try:
+            page.pop_dialog()
+        except Exception:
+            pass
         open_online_reader(manga_id, target_url, title, cover_url=cover_url, initial_scroll=0)
 
     def build_source_card(source: dict, manga: dict) -> ft.Control:
@@ -376,6 +378,7 @@ def main(page: ft.Page):
         state = {
             "url": initial_url,
             "scroll_y": max(0, int(initial_scroll)),
+            "restore_y": max(0, int(initial_scroll)),
             "last_saved_y": -1,
             "last_saved_at": 0.0,
             "restore_pending": int(initial_scroll) > 0,
@@ -414,6 +417,9 @@ def main(page: ft.Page):
             if parsed_url.scheme not in {"https", "http"} or not parsed_url.netloc:
                 return
             state["url"] = changed_url
+            if state["restore_pending"]:
+                repository.save_online_progress(manga_id, state["url"], state["restore_y"])
+                return
             state["scroll_y"] = 0
             repository.save_online_progress(manga_id, state["url"], 0)
             reading_status.value = "章节地址已更新，阅读位置自动保存"
@@ -442,7 +448,8 @@ def main(page: ft.Page):
             if state["restore_pending"]:
                 try:
                     await asyncio.sleep(0.35)
-                    await webview.scroll_to(0, state["scroll_y"])
+                    await webview.scroll_to(0, state["restore_y"])
+                    state["scroll_y"] = state["restore_y"]
                 except Exception:
                     pass
                 state["restore_pending"] = False
