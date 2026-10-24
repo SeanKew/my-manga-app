@@ -39,6 +39,51 @@ def main(page: ft.Page):
     page.padding = 12
     page.spacing = 10
 
+    # Keep real Flet Views in a stack so Android's system Back can return to
+    # the previous screen instead of rebuilding the library every time.
+    if not page.views:
+        page.views.append(ft.View(route="/", can_pop=False))
+    else:
+        page.views[0].can_pop = False
+    screen_sequence = {"value": 0}
+    screen_back_handlers: dict[str, object] = {}
+
+    def push_screen(name: str) -> str:
+        screen_sequence["value"] += 1
+        route = f"/screen/{name}/{screen_sequence['value']}"
+        page.views.append(
+            ft.View(
+                route=route,
+                can_pop=True,
+                padding=0,
+                spacing=0,
+            )
+        )
+        return route
+
+    def pop_screen(_event=None) -> bool:
+        if len(page.views) <= 1:
+            return False
+        popped = page.views.pop()
+        screen_back_handlers.pop(popped.route, None)
+        target_route = page.views[-1].route or "/"
+        page.padding = 0 if "reader-" in target_route else 12
+        page.navigate(target_route)
+        page.update()
+        return True
+
+    def handle_system_back(_event):
+        if len(page.views) <= 1:
+            return
+        route = page.views[-1].route
+        back_handler = screen_back_handlers.get(route)
+        if callable(back_handler):
+            page.run_task(back_handler)
+        else:
+            pop_screen()
+
+    page.on_view_pop = handle_system_back
+
     repository = MangaRepository()
     picker = ft.FilePicker()
     page.services.append(picker)
@@ -231,6 +276,96 @@ def main(page: ft.Page):
         repository.set_favorite(manga_id, favorite)
         refresh_library()
         show_status("已更新收藏状态。")
+
+
+    def delete_manga_from_shelf(manga_id: int, title: str):
+        def do_delete(_event=None):
+            page.pop_dialog()
+            repository.delete_manga(manga_id)
+            refresh_library()
+            show_status(f"已从书架删除《{title}》的记录。")
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("确认删除"),
+            content=ft.Text(
+                f"要从书架删除《{title}》吗？该漫画的收藏状态和在线阅读进度也会一起移除。"
+            ),
+            actions=[
+                ft.TextButton("取消", on_click=lambda e: page.pop_dialog()),
+                ft.TextButton("删除", on_click=do_delete),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.show_dialog(dialog)
+
+    def _default_catalog_source(manga: dict) -> str:
+        title = display_title(manga)
+        sources = discover_reading_sources(title, english_title(manga))
+        return next(
+            (
+                source["url"]
+                for source in sources
+                if source.get("id") == "chinese_licensed_search"
+            ),
+            manga.get("siteUrl") or "",
+        )
+
+    def add_catalog_to_shelf(manga: dict, button: ft.TextButton | None = None):
+        title = display_title(manga)
+        cover_url = (
+            (manga.get("coverImage") or {}).get("large")
+            or (manga.get("coverImage") or {}).get("extraLarge")
+            or ""
+        )
+        source_url = _default_catalog_source(manga)
+        if not source_url:
+            show_status("这部漫画还没有可保存的来源链接。", error=True)
+            return
+        repository.add_online_manga(
+            title=title,
+            source_uri=source_url,
+            cover_url=cover_url,
+            catalog_id=manga.get("id"),
+            in_library=True,
+        )
+        refresh_library()
+        if button is not None:
+            button.text = "已加入书架"
+            button.disabled = True
+        show_status(f"《{title}》已加入书架。")
+
+    def build_add_to_shelf_button(manga: dict) -> ft.TextButton:
+        title = display_title(manga)
+        catalog_id = manga.get("id")
+        saved = repository.is_online_manga_in_library(title, catalog_id)
+        button = ft.TextButton(
+            "已加入书架" if saved else "加入书架",
+            icon=ft.Icons.BOOKMARK if saved else ft.Icons.BOOKMARK_ADD,
+            disabled=saved,
+        )
+        button.on_click = lambda e, item=manga, target=button: add_catalog_to_shelf(item, target)
+        return button
+
+    def build_record_shelf_button(manga_id: int) -> ft.TextButton:
+        item = repository.get_manga(manga_id) or {}
+        saved = bool(item.get("is_in_library"))
+
+        def add_existing_record(_event=None):
+            repository.add_to_library(manga_id)
+            button.text = "已加入书架"
+            button.icon = ft.Icons.BOOKMARK
+            button.disabled = True
+            refresh_library()
+            page.update()
+
+        button = ft.TextButton(
+            "已加入书架" if saved else "加入书架",
+            icon=ft.Icons.BOOKMARK if saved else ft.Icons.BOOKMARK_ADD,
+            disabled=saved,
+            on_click=add_existing_record,
+        )
+        return button
 
     async def import_files(_):
         try:
