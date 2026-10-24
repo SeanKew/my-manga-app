@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "A local manga library and reader built with Flet"
 requires-python = ">=3.10"
 dependencies = [
-    "flet>=0.80.0,<1.0",
+    "flet==0.86.5",
+    "flet-webview==0.86.5",
 ]
 
 [tool.flet.flutter.pubspec.dependency_overrides]
