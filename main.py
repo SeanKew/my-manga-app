@@ -683,6 +683,7 @@ def main(page: ft.Page):
         async def set_ad_filter(enabled: bool):
             state["ad_filter_enabled"] = bool(enabled)
             try:
+                webview.prevent_links = AD_BLOCK_LINK_PREFIXES if enabled else None
                 script = COSMETIC_AD_FILTER_JS if enabled else DISABLE_AD_FILTER_JS
                 await webview.run_javascript(script)
                 reading_status.value = (
