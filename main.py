@@ -16,6 +16,14 @@ except ImportError:
 
 from data.repository import MangaRepository
 from services.local_import_service import import_local_file
+from services.native_reading_service import (
+    AD_BLOCK_LINK_PREFIXES,
+    COSMETIC_AD_FILTER_JS,
+    DISABLE_AD_FILTER_JS,
+    IMAGE_EXTRACTION_JS,
+    IMAGE_MESSAGE_PREFIX,
+    normalize_image_candidates,
+)
 from services.online_catalog_service import MangaCatalogError, display_title, english_title, plain_description, search_manga
 from services.reading_sources_service import discover_reading_sources
 from ui.reader_page import load_page_base64
@@ -267,6 +275,17 @@ def main(page: ft.Page):
             show_status("找不到这本漫画。", error=True)
             return
         if manga.get("source_type") == "online":
+            native_state = repository.get_native_reader_state(manga_id)
+            if native_state and native_state.get("image_urls"):
+                open_native_reader(
+                    manga_id,
+                    manga["title"],
+                    native_state.get("source_url") or manga.get("source_uri") or "",
+                    native_state["image_urls"],
+                    cover_url=manga.get("cover_path") or "",
+                    initial_index=int(native_state.get("page_index") or 0),
+                )
+                return
             progress = repository.get_progress(manga_id) or {}
             source_url = progress.get("source_url") or manga.get("source_uri") or ""
             if not source_url:
@@ -362,6 +381,186 @@ def main(page: ft.Page):
         )
         page.update()
 
+
+    def open_native_reader(
+        manga_id: int,
+        title: str,
+        source_url: str,
+        image_urls: list[str],
+        cover_url: str = "",
+        initial_index: int = 0,
+    ):
+        """Render extracted online chapter images in Manga.app's own reader UI."""
+        urls = normalize_image_candidates(image_urls, source_url)
+        if not urls:
+            show_status("没有找到可用的漫画图片；请返回网页并确认章节已完整加载。", error=True)
+            return
+
+        state = {
+            "index": max(0, min(int(initial_index), len(urls) - 1)),
+            "mode": "single",
+        }
+
+        def save_state():
+            repository.save_native_reader_state(
+                manga_id, source_url, urls, state["index"]
+            )
+
+        def back_to_library(_event=None):
+            save_state()
+            page.padding = 12
+            build_library_view()
+
+        def return_to_source(_event=None):
+            save_state()
+            open_online_reader(
+                manga_id,
+                source_url,
+                title,
+                cover_url=cover_url,
+                initial_scroll=0,
+            )
+
+        def move_page(delta: int):
+            next_index = state["index"] + delta
+            if 0 <= next_index < len(urls):
+                state["index"] = next_index
+                save_state()
+                render_reader()
+
+        def set_mode(mode: str):
+            state["mode"] = mode
+            render_reader()
+
+        def render_reader():
+            page.padding = 0
+            page.clean()
+            width = max(220, int(page.width or 400) - 12)
+            height = max(320, int(page.height or 800) - 180)
+
+            if state["mode"] == "single":
+                image_area = ft.Container(
+                    expand=True,
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Image(
+                        src=urls[state["index"]],
+                        width=width,
+                        height=height,
+                        fit=ft.BoxFit.CONTAIN,
+                    ),
+                )
+            else:
+                image_area = ft.ListView(
+                    expand=True,
+                    spacing=2,
+                    controls=[
+                        ft.Image(
+                            src=image_url,
+                            width=width,
+                            fit=ft.BoxFit.FIT_WIDTH,
+                        )
+                        for image_url in urls
+                    ],
+                )
+
+            page_number = ft.Text(
+                f"第 {state['index'] + 1} / {len(urls)} 页",
+                size=13,
+                color=ft.Colors.GREY_300,
+            )
+            page.add(
+                ft.SafeArea(
+                    expand=True,
+                    content=ft.Column(
+                        expand=True,
+                        spacing=0,
+                        controls=[
+                            ft.Container(
+                                padding=8,
+                                content=ft.Row(
+                                    controls=[
+                                        ft.IconButton(
+                                            icon=ft.Icons.ARROW_BACK,
+                                            tooltip="返回书架",
+                                            on_click=back_to_library,
+                                        ),
+                                        ft.Column(
+                                            expand=True,
+                                            spacing=1,
+                                            controls=[
+                                                ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=1),
+                                                ft.Text("Manga.app 阅读模式", size=11, color=ft.Colors.GREY_500),
+                                            ],
+                                        ),
+                                        ft.IconButton(
+                                            icon=ft.Icons.LANGUAGE,
+                                            tooltip="返回来源网页",
+                                            on_click=return_to_source,
+                                        ),
+                                    ],
+                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                ),
+                            ),
+                            ft.Divider(height=1, color=ft.Colors.GREY_800),
+                            image_area,
+                            ft.Divider(height=1, color=ft.Colors.GREY_800),
+                            ft.Container(
+                                padding=8,
+                                content=ft.Column(
+                                    spacing=4,
+                                    controls=[
+                                        ft.Row(
+                                            controls=[
+                                                ft.IconButton(
+                                                    icon=ft.Icons.CHEVRON_LEFT,
+                                                    tooltip="上一页",
+                                                    disabled=state["index"] == 0 or state["mode"] != "single",
+                                                    on_click=lambda e: move_page(-1),
+                                                ),
+                                                page_number,
+                                                ft.IconButton(
+                                                    icon=ft.Icons.CHEVRON_RIGHT,
+                                                    tooltip="下一页",
+                                                    disabled=state["index"] >= len(urls) - 1 or state["mode"] != "single",
+                                                    on_click=lambda e: move_page(1),
+                                                ),
+                                            ],
+                                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                        ),
+                                        ft.Row(
+                                            controls=[
+                                                ft.OutlinedButton(
+                                                    "单页阅读",
+                                                    icon=ft.Icons.FILTER_1,
+                                                    on_click=lambda e: set_mode("single"),
+                                                    disabled=state["mode"] == "single",
+                                                    expand=True,
+                                                ),
+                                                ft.OutlinedButton(
+                                                    "长条阅读",
+                                                    icon=ft.Icons.VIEW_DAY,
+                                                    on_click=lambda e: set_mode("strip"),
+                                                    disabled=state["mode"] == "strip",
+                                                    expand=True,
+                                                ),
+                                            ],
+                                        ),
+                                        ft.Text(
+                                            "图片由当前网页公开显示的图片元素提取；如果图片受防盗链、登录或站点限制，可能无法载入。",
+                                            size=10,
+                                            color=ft.Colors.GREY_500,
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ],
+                    ),
+                )
+            )
+            save_state()
+            page.update()
+
+        render_reader()
 
     def open_online_reader(
         manga_id: int,
