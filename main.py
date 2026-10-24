@@ -392,7 +392,11 @@ def main(page: ft.Page):
                                             [
                                                 ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=3),
                                                 ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
-                                                ft.Text(plain_description(item, 180) or "暂无简介", size=12, max_lines=3),
+                                                ft.Text(
+                                                    (lambda summary: summary if any("\\u3400" <= ch <= "\\u9fff" for ch in summary) else "暂无中文简介；打开详情查找中文阅读来源。")(plain_description(item, 180)),
+                                                    size=12,
+                                                    max_lines=3,
+                                                ),
                                                 ft.TextButton("查看详情", on_click=show_details),
                                             ],
                                             expand=True,
@@ -446,7 +450,7 @@ def main(page: ft.Page):
             ft.Divider(),
             results,
             ft.Text(
-                "优先显示可识别的中文标题；部分作品暂时没有中文简介。阅读链接会标明语言与免费状态需进一步确认。",
+                "优先显示可识别的中文标题；部分作品暂无中文简介。阅读来源会标明语言，并提示免费章节需进一步确认。",
                 size=12,
                 color=ft.Colors.GREY_500,
             ),
