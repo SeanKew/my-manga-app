@@ -30,6 +30,11 @@ def discover_reading_sources(
         if _is_one_punch_man(title, english_title)
         else f"https://www.viz.com/search?search={quote_plus(english_title or title)}"
     )
+    viz_description = (
+        "官方《一拳超人》章节页；页面会标出可免费阅读的章节，语言和可用地区有限制。"
+        if _is_one_punch_man(title, english_title)
+        else "官方漫画平台；部分作品或章节可免费阅读，是否收录此作品取决于目录和地区。"
+    )
 
     return [
         {
@@ -45,7 +50,7 @@ def discover_reading_sources(
             "name": "VIZ / Shonen Jump",
             "url": viz_url,
             "language": "English",
-            "description": "官方平台；《一拳超人》部分章节可免费阅读，但语言与可用地区有限制。",
+            "description": viz_description,
             "availability": "以平台章节页为准",
         },
         {
