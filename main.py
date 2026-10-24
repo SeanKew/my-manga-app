@@ -397,7 +397,7 @@ def main(page: ft.Page):
         }
         page.padding = 0
         reading_status = ft.Text(
-            "阅读位置会自动保存在本机书架。",
+            "正在启用 JavaScript 并加载网页……",
             size=12,
             color=ft.Colors.GREY_400,
         )
@@ -441,8 +441,11 @@ def main(page: ft.Page):
             reading_status.value = f"部分网页资源载入失败：{error_text[:100]}"
             page.update()
 
+        # Start on a blank page so JavaScript can be enabled before the target
+        # site begins its first navigation. Android WebView defaults may otherwise
+        # leave JavaScript disabled for the initial request.
         webview = fwv.WebView(
-            url=initial_url,
+            url="about:blank",
             expand=True,
             bgcolor="#111216",
             on_scroll=on_web_scroll,
@@ -450,11 +453,25 @@ def main(page: ft.Page):
             on_web_resource_error=on_web_error,
         )
 
+        async def initialize_webview():
+            try:
+                await webview.set_javascript_mode(fwv.JavaScriptMode.UNRESTRICTED)
+                await webview.load_request(initial_url)
+                reading_status.value = "JavaScript 已启用，正在载入页面……"
+            except Exception as ex:
+                reading_status.value = (
+                    "内嵌网页无法启用脚本或加载失败；请点击「外部打开」继续。"
+                    f"（{str(ex)[:100]}）"
+                )
+            page.update()
+
         async def on_page_ended(_event):
             try:
                 actual_url = await webview.get_current_url()
                 if actual_url:
-                    state["url"] = actual_url
+                    actual = urlparse(actual_url)
+                    if actual.scheme in {"https", "http"} and actual.netloc:
+                        state["url"] = actual_url
             except Exception:
                 pass
             if state["restore_pending"]:
@@ -568,6 +585,8 @@ def main(page: ft.Page):
             )
         )
         page.update()
+        # The WebView must be attached to the page before native methods are called.
+        page.run_task(initialize_webview)
 
     async def run_online_search(query: str, results: ft.ListView, message: ft.Text, button: ft.Button):
         query = query.strip()
