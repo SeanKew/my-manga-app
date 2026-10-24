@@ -136,17 +136,18 @@ IMAGE_EXTRACTION_JS = r"""(async () => {
         parentText.push(String(parent.id || "") + " " + String(parent.className || ""));
       }
       if (adPattern.test(parentText.join(" "))) continue;
-      const raw = img.currentSrc || img.src ||
-        img.getAttribute("data-src") ||
+      const raw = img.getAttribute("data-src") ||
         img.getAttribute("data-original") ||
         img.getAttribute("data-lazy-src") ||
-        img.getAttribute("data-url") || "";
+        img.getAttribute("data-url") ||
+        (img.complete && img.naturalWidth > 0 ? img.currentSrc : "") ||
+        img.currentSrc || img.src || "";
       if (!raw) continue;
       const url = new URL(raw, location.href);
       if (!["http:", "https:"].includes(url.protocol)) continue;
       if (/doubleclick\.net|googlesyndication\.com|googleadservices\.com|taboola\.com|outbrain\.com/i.test(url.hostname)) continue;
-      const width = Number(img.naturalWidth || img.width || img.getAttribute("width") || 0);
-      const height = Number(img.naturalHeight || img.height || img.getAttribute("height") || 0);
+      const width = Math.max(Number(img.naturalWidth || 0), Number(img.width || 0), Number(img.getAttribute("width") || 0));
+      const height = Math.max(Number(img.naturalHeight || 0), Number(img.height || 0), Number(img.getAttribute("height") || 0));
       if (width && width < 180) continue;
       if (height && height < 240) continue;
       if (width && height && width * height < 60000) continue;
