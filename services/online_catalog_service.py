@@ -16,6 +16,8 @@ query ($search: String!) {
     media(search: $search, type: MANGA, isAdult: false, sort: [SEARCH_MATCH]) {
       id
       title { romaji english native }
+    synonyms
+      synonyms
       description(asHtml: false)
       coverImage { large extraLarge }
       siteUrl
@@ -106,10 +108,53 @@ def get_manga_details(media_id: int) -> dict:
     return media
 
 
-def display_title(item: dict) -> str:
-    """Pick a useful title regardless of which language fields are populated."""
+def english_title(item: dict) -> str:
+    """Pick the best English/romanized title for provider searches."""
     titles = item.get("title") or {}
-    return titles.get("english") or titles.get("native") or titles.get("romaji") or "未命名漫画"
+    return titles.get("english") or titles.get("romaji") or titles.get("native") or "Untitled manga"
+
+
+def chinese_title(item: dict) -> str | None:
+    """Prefer Chinese aliases supplied by AniList, with safe common-title fallbacks."""
+    import re
+
+    titles = item.get("title") or {}
+    english = titles.get("english") or ""
+    romaji = titles.get("romaji") or ""
+    native = titles.get("native") or ""
+    for synonym in item.get("synonyms") or []:
+        if isinstance(synonym, str) and re.search(r"[\u3400-\u9fff]", synonym):
+            return synonym.strip()
+
+    aliases = {
+        "one punch man": "一拳超人",
+        "one-punch man": "一拳超人",
+        "one piece": "航海王／海贼王",
+        "demon slayer: kimetsu no yaiba": "鬼灭之刃",
+        "demon slayer": "鬼灭之刃",
+        "jujutsu kaisen": "咒术回战",
+        "chainsaw man": "电锯人",
+        "spy x family": "间谍过家家",
+        "attack on titan": "进击的巨人",
+        "my hero academia": "我的英雄学院",
+        "frieren: beyond journey's end": "葬送的芙莉莲",
+        "solo leveling": "我独自升级",
+        "blue lock": "蓝色监狱",
+        "naruto": "火影忍者",
+        "dragon ball": "龙珠",
+        "sakamoto days": "坂本日常",
+        "kaiju no. 8": "怪兽8号",
+    }
+    for candidate in (english, romaji, native):
+        key = " ".join(str(candidate).casefold().split())
+        if key in aliases:
+            return aliases[key]
+    return None
+
+
+def display_title(item: dict) -> str:
+    """Prefer a Chinese title when known; otherwise use a useful catalog title."""
+    return chinese_title(item) or english_title(item)
 
 
 def plain_description(item: dict, limit: int = 1200) -> str:
