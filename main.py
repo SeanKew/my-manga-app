@@ -1,7 +1,6 @@
 """Manga.app: local manga library and reader MVP."""
 from __future__ import annotations
 
-import asyncio
 import base64
 from pathlib import Path
 
@@ -222,14 +221,14 @@ def main(page: ft.Page):
                         icon=ft.Icons.CHEVRON_LEFT,
                         disabled=page_index == 0,
                         on_click=lambda _: move_page(-1),
-                        expand=True,
+                        width=150,
                     ),
                     ft.Button(
                         content="下一页",
                         icon=ft.Icons.CHEVRON_RIGHT,
                         disabled=page_index >= len(page_paths) - 1,
                         on_click=lambda _: move_page(1),
-                        expand=True,
+                        width=150,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
