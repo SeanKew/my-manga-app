@@ -299,7 +299,7 @@ def main(page: ft.Page):
                                 padding=10,
                                 content=ft.Row(
                                     [
-                                        ft.Image(src=cover, width=76, height=108, fit=ft.ImageFit.CONTAIN)
+                                        ft.Image(src=cover, width=76, height=108, fit=ft.BoxFit.CONTAIN)
                                         if cover else ft.Container(width=76, height=108, alignment=ft.Alignment.CENTER, content=ft.Icon(ft.Icons.MENU_BOOK)),
                                         ft.Column(
                                             [
