@@ -13,6 +13,10 @@ from services.reading_sources_service import discover_reading_sources
 from ui.reader_page import load_page_base64
 
 
+def has_chinese_text(value: str) -> bool:
+    return any(0x3400 <= ord(char) <= 0x9fff for char in value)
+
+
 def main(page: ft.Page):
     page.title = "Manga.app"
     page.theme_mode = ft.ThemeMode.DARK
@@ -317,15 +321,15 @@ def main(page: ft.Page):
             page.update()
             return
         button.disabled = True
-        message.value = "正在联网搜索 AniList 漫画资料库……"
+        message.value = "正在搜索漫画资料（支持中文、英文或日文标题）……"
         results.controls.clear()
         page.update()
         try:
             items = await asyncio.to_thread(search_manga, query)
             if not items:
-                message.value = "没有找到结果，试试英文或日文标题。"
+                message.value = "没有找到资料，可以试试作品的英文、日文或中文别名。"
             else:
-                message.value = f"找到 {len(items)} 条结果。这里展示的是漫画资料，不代表提供在线章节。"
+                message.value = f"找到 {len(items)} 条资料。详情页会列出可尝试的阅读来源；免费章节和中文版本以平台实际页面为准。"
                 for item in items:
                     cover = (item.get("coverImage") or {}).get("large") or (item.get("coverImage") or {}).get("extraLarge")
                     title = display_title(item)
@@ -337,6 +341,9 @@ def main(page: ft.Page):
                     subtitle = f"{year} · {chapter_text}" + (f" · 评分 {score}/100" if score else "")
                     if english_name and english_name != title:
                         subtitle = f"{english_name} · {subtitle}"
+                    summary = plain_description(item, 180)
+                    if not has_chinese_text(summary):
+                        summary = "暂无中文简介；打开详情查找中文阅读来源。"
                     def show_details(_event, manga=item):
                         raw_description = plain_description(manga)
                         has_chinese_description = any("\u3400" <= ch <= "\u9fff" for ch in raw_description)
@@ -392,11 +399,7 @@ def main(page: ft.Page):
                                             [
                                                 ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=3),
                                                 ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
-                                                ft.Text(
-                                                    (lambda summary: summary if any("\\u3400" <= ch <= "\\u9fff" for ch in summary) else "暂无中文简介；打开详情查找中文阅读来源。")(plain_description(item, 180)),
-                                                    size=12,
-                                                    max_lines=3,
-                                                ),
+                                                ft.Text(summary, size=12, max_lines=3),
                                                 ft.TextButton("查看详情", on_click=show_details),
                                             ],
                                             expand=True,
