@@ -162,6 +162,52 @@ class MangaRepository:
                 (manga_id, max(0, int(scroll_y)), str(source_url or "")),
             )
 
+    def save_native_reader_state(
+        self,
+        manga_id: int,
+        source_url: str,
+        image_urls: Iterable[str],
+        page_index: int,
+    ) -> None:
+        """Persist extracted page URLs and the current native-reader page."""
+        clean_urls = [str(url).strip() for url in image_urls if str(url).strip()][:250]
+        if not clean_urls:
+            raise ValueError("在线阅读页面列表不能为空")
+        with connection(self.db_path) as db:
+            db.execute(
+                """INSERT INTO online_reader_state(
+                       manga_id, source_url, image_urls_json, page_index, updated_at
+                   ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(manga_id) DO UPDATE SET
+                     source_url = excluded.source_url,
+                     image_urls_json = excluded.image_urls_json,
+                     page_index = excluded.page_index,
+                     updated_at = CURRENT_TIMESTAMP""",
+                (
+                    manga_id,
+                    str(source_url or ""),
+                    json.dumps(clean_urls, ensure_ascii=False),
+                    max(0, min(int(page_index), len(clean_urls) - 1)),
+                ),
+            )
+
+    def get_native_reader_state(self, manga_id: int) -> dict | None:
+        """Load the last extracted pages for an online manga, if any."""
+        with connection(self.db_path) as db:
+            row = db.execute(
+                "SELECT * FROM online_reader_state WHERE manga_id = ?",
+                (manga_id,),
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        try:
+            urls = json.loads(item.pop("image_urls_json", "[]"))
+        except (TypeError, json.JSONDecodeError):
+            urls = []
+        item["image_urls"] = [url for url in urls if isinstance(url, str)]
+        return item
+
     def list_categories(self) -> list[dict]:
         with connection(self.db_path) as db:
             return [dict(row) for row in db.execute("SELECT * FROM category ORDER BY name").fetchall()]
