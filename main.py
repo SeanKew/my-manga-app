@@ -264,6 +264,13 @@ def main(page: ft.Page):
                                     tooltip="继续阅读",
                                     on_click=lambda e, manga_id=item["id"]: open_reader(manga_id),
                                 ),
+                                ft.IconButton(
+                                    icon=ft.Icons.DELETE_OUTLINE,
+                                    tooltip="从书架删除",
+                                    icon_color=ft.Colors.RED_300,
+                                    on_click=lambda e, manga_id=item["id"], title=item["title"]:
+                                        delete_manga_from_shelf(manga_id, title),
+                                ),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
@@ -1046,6 +1053,8 @@ def main(page: ft.Page):
                     summary = plain_description(item, 180)
                     if not has_chinese_text(summary):
                         summary = "暂无中文简介；打开详情查找中文阅读来源。"
+                    add_shelf_button = build_add_to_shelf_button(item)
+
                     def show_details(_event, manga=item):
                         raw_description = plain_description(manga)
                         has_chinese_description = any("\u3400" <= ch <= "\u9fff" for ch in raw_description)
@@ -1069,6 +1078,7 @@ def main(page: ft.Page):
                                         ft.Text(f"章节：{manga.get('chapters') or '未知'} · 卷数：{manga.get('volumes') or '未知'}"),
                                         ft.Text("类型：" + "、".join(manga.get("genres") or []) if manga.get("genres") else "类型：未知"),
                                         ft.Text(detail_text, selectable=True),
+                                        build_add_to_shelf_button(manga),
                                         ft.Text(
                                             "下列链接分别打开应用内网页或外部浏览器。平台可能只提供部分免费章节，并可能因地区、语言或账号而不同。",
                                             color=ft.Colors.GREY_400,
@@ -1102,7 +1112,13 @@ def main(page: ft.Page):
                                                 ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=3),
                                                 ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
                                                 ft.Text(summary, size=12, max_lines=3),
-                                                ft.TextButton("查看详情", on_click=show_details),
+                                                ft.Row(
+                                                    controls=[
+                                                        add_shelf_button,
+                                                        ft.TextButton("查看详情", on_click=show_details),
+                                                    ],
+                                                    wrap=True,
+                                                ),
                                             ],
                                             expand=True,
                                             spacing=4,
@@ -1143,11 +1159,12 @@ def main(page: ft.Page):
             icon=ft.Icons.SEARCH,
             on_click=lambda e: page.run_task(run_online_search, query_box.value or "", results, message, search_button),
         )
+        push_screen("online-discovery")
         page.clean()
         page.add(
             ft.AppBar(
                 title=ft.Text("Manga.app · 在线发现"),
-                leading=ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=lambda e: build_library_view()),
+                leading=ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=lambda e: pop_screen()),
             ),
             ft.Text("联网搜索", size=20, weight=ft.FontWeight.BOLD),
             ft.Row([query_box, search_button]),
