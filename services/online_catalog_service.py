@@ -16,7 +16,6 @@ query ($search: String!) {
     media(search: $search, type: MANGA, isAdult: false, sort: [SEARCH_MATCH]) {
       id
       title { romaji english native }
-    synonyms
       synonyms
       description(asHtml: false)
       coverImage { large extraLarge }
@@ -36,6 +35,7 @@ query ($id: Int!) {
   Media(id: $id, type: MANGA) {
     id
     title { romaji english native }
+    synonyms
     description(asHtml: false)
     coverImage { large extraLarge }
     siteUrl
