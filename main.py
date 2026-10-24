@@ -957,7 +957,7 @@ def main(page: ft.Page):
                                 [
                                     ft.IconButton(
                                         icon=ft.Icons.ARROW_BACK,
-                                        tooltip="返回书架",
+                                        tooltip="返回上一页",
                                         on_click=back_to_library,
                                     ),
                                     ft.Text(title, weight=ft.FontWeight.BOLD, max_lines=1, expand=True),
