@@ -468,12 +468,14 @@ def main(page: ft.Page):
         async def on_page_ended(_event):
             try:
                 actual_url = await webview.get_current_url()
-                if actual_url:
-                    actual = urlparse(actual_url)
-                    if actual.scheme in {"https", "http"} and actual.netloc:
-                        state["url"] = actual_url
+                actual = urlparse(str(actual_url or ""))
+                # Ignore the initial about:blank navigation; never persist it or
+                # consume the saved scroll position before the real page loads.
+                if actual.scheme not in {"https", "http"} or not actual.netloc:
+                    return
+                state["url"] = actual_url
             except Exception:
-                pass
+                return
             if state["restore_pending"]:
                 try:
                     await asyncio.sleep(0.35)
